@@ -1,0 +1,599 @@
+:root{
+  --bg:#17181A;
+  --card:#212227;
+  --card-day:#26272C;       /* ранкова половина — трохи світліша за решту UI */
+  --card-night:#161719;     /* половина після вечірнього уколу — тільки світлість */
+  --panel:#1E1F22;
+  --hairline:#2E3036;
+  --text:#E8EAEC;
+  --muted:#9A9EA6;
+  --faint:#6B7078;
+
+  --form:#1E2119;
+  --form-field:#171A13;
+
+  --sage:#A3C585;
+  --sage-dim:#7C9A62;
+  --stool:#C9A227;
+  --insulin:#5AA9E6;
+  --food:#A78BE0;
+
+  --f-display:'Gentium Plus',serif;
+  --f-body:'Roboto',system-ui,sans-serif;
+  --head-h:56px;
+  --bar-h:51px;
+  --jbar-h:57px;
+  --pad:14px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{background:#0F1011;color:var(--text);font-family:var(--f-body);
+  -webkit-font-smoothing:antialiased;display:flex;justify-content:center}
+.app{width:100%;max-width:480px;background:var(--bg);min-height:100vh;
+  border-left:1px solid var(--hairline);border-right:1px solid var(--hairline)}
+
+header{position:sticky;top:0;z-index:40;height:var(--head-h);
+  transition:transform .22s ease;display:flex;align-items:center;
+  background:rgba(23,24,26,.92);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--hairline)}
+.brand{flex:1;display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 var(--pad)}
+h1{font-family:var(--f-display);font-size:18px;font-weight:500;letter-spacing:-.01em}
+h1 em{font-style:normal;color:var(--faint)}
+.now{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.now b{color:var(--text);font-weight:600}
+.tabs{display:flex;gap:20px;margin-top:16px;padding:0 var(--pad);overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+/* ховаємо шапку при скролі вниз, повертаємо при найменшому скролі вгору */
+body.hh header{transform:translateY(-100%)}
+@media(prefers-reduced-motion:reduce){header{transition:none}}
+.tab{background:none;border:0;padding:0 0 12px;cursor:pointer;font-family:inherit;
+  font-size:14px;font-weight:500;color:var(--faint);white-space:nowrap;
+  border-bottom:2px solid transparent;transition:color .15s}
+.tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--sage)}
+
+main{padding:0 0 76px}
+.legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0 var(--pad) 14px}
+.legend span{font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px}
+
+/* ---------- доба карткою ---------- */
+.day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;overflow:hidden}
+.day-head{width:100%;background:none;border:0;cursor:pointer;text-align:left;
+  padding:14px 18px 16px;display:block;font-family:inherit;color:inherit}
+.day-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.day-line2{font-size:11.5px;color:var(--faint);margin-top:3px}
+.day-line2 b{color:var(--insulin);font-weight:500}
+.day-name{font-family:var(--f-display);font-size:17px;font-weight:500}
+.day-range{font-family:var(--f-display);font-size:15px;font-weight:400;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.day-range i{font-family:var(--f-body);font-style:normal;font-size:9.5px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--faint)}
+.chev{display:inline-flex;line-height:0;color:var(--faint);transition:transform .18s}
+.day.open .chev{transform:rotate(180deg)}
+.chev{color:var(--faint);font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-left:10px}
+.spark{display:block;margin:8px 0 10px;width:100%;height:auto}
+.mini{display:block;width:100%;height:auto}
+.day.open .spark{opacity:.35}
+.day-meta{display:flex;flex-wrap:wrap;gap:6px 8px}
+.meta{font-size:11.5px;color:var(--muted);border:1px solid var(--hairline);white-space:nowrap;
+  border-radius:99px;padding:4px 10px;font-variant-numeric:tabular-nums}
+.meta.dose{border-color:color-mix(in srgb,var(--insulin) 45%,transparent);color:var(--insulin)}
+
+.entries{display:none;border-top:1px solid var(--hairline)}
+.day.open .entries{display:block}
+
+.entry{display:grid;grid-template-columns:50px 1fr;position:relative;
+  background:var(--card-day);transition:background .12s}
+.entry.night{background:var(--card-night)}
+.entry+.entry .card{border-top:1px solid var(--hairline)}
+.gutter{position:relative}
+/* Одна смуга на всю висоту рядка з трьома зупинками: середня стоїть рівно в
+   центрі вузла (22px зверху + половина від 12px = 28px), тому перехід кольору
+   сходиться саме там і зламу не видно. Крайні записи не потребують окремих
+   правил: у них просто немає --c-in або --c-out, і кінець згасає в прозоре. */
+.gutter::before{content:"";position:absolute;left:24px;width:2px;top:0;bottom:0;
+  background:linear-gradient(to bottom,
+    color-mix(in srgb, var(--dot,transparent) 50%, var(--c-in,transparent)) 0,
+    var(--dot,transparent) 28px,
+    color-mix(in srgb, var(--dot,transparent) 50%, var(--c-out,transparent)) 100%)}
+.node{position:absolute;top:22px;left:19px;width:12px;height:12px;border-radius:50%;
+  background:var(--dot,var(--faint));box-shadow:0 0 0 4px var(--card-day)}
+.entry.night .node{box-shadow:0 0 0 4px var(--card-night)}
+.node.hollow{background:transparent;box-shadow:0 0 0 4px var(--card-day),inset 0 0 0 2px var(--faint)}
+.entry.night .node.hollow{box-shadow:0 0 0 4px var(--card-night),inset 0 0 0 2px var(--faint)}
+.node.ring{background:transparent;box-shadow:0 0 0 4px var(--card-day),inset 0 0 0 3px var(--dot)}
+.entry.night .node.ring{box-shadow:0 0 0 4px var(--card-night),inset 0 0 0 3px var(--dot)}
+
+.card{padding:14px 18px 18px 0;position:relative}
+.card-top{display:grid;grid-template-columns:40px auto 1fr;align-items:baseline;
+  column-gap:12px;row-gap:2px}
+.card-top .delta{grid-column:2/4;padding-right:26px}
+.edit{position:absolute;top:14px;right:12px;background:none;border:0;padding:6px;cursor:pointer;
+  color:var(--faint);opacity:.5;line-height:0;border-radius:8px;flex:0 0 auto}
+.edit:hover{opacity:1;color:var(--text);background:rgba(255,255,255,.05)}
+.note{cursor:pointer}
+.time{font-size:13px;color:var(--muted);min-width:40px;font-variant-numeric:tabular-nums}
+.val{display:flex;align-items:baseline;gap:6px;line-height:.95}
+.val .n{font-family:var(--f-display);font-size:40px;font-weight:400;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.val .u{font-size:11.5px;color:var(--faint)}
+.val.off .n{font-size:28px;font-style:italic}
+.delta{font-size:11.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+.no-val{font-size:15px;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0 52px}
+.chip{font-size:11.5px;padding:5px 11px;border-radius:99px;
+  border:1px solid var(--hairline);color:var(--muted)}
+.chip.dose{border-color:color-mix(in srgb,var(--insulin) 50%,transparent);color:var(--insulin)}
+.chip.food{border-color:color-mix(in srgb,var(--food) 45%,transparent);color:var(--food)}
+.chip.skip{color:var(--faint)}
+.note{margin:12px 0 0 52px;font-size:13.5px;line-height:1.55;color:#C4C8CE}
+.note.clamped{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.vetnote{margin:12px 0 0 52px;border-left:2px solid var(--sage-dim);
+  padding:10px 14px;border-radius:0 12px 12px 0;background:var(--panel)}
+.vetnote .who{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--sage-dim);display:block;margin-bottom:6px}
+.vetnote p{font-size:13.5px;line-height:1.55;color:#C4C8CE}
+
+/* ---------- зведення: доба карткою, всередині ранок/вечір ---------- */
+.sum-note{padding:14px var(--pad) 16px;font-size:12.5px;color:var(--muted);line-height:1.6}
+/* Разова картка-пояснення. Прив'язана до екрана, а не до місця в списку:
+   список відкривається на найсвіжіших, тобто внизу, і текст угорі людина
+   побачила б лише догортавши — тобто тоді, коли він уже не потрібен. */
+.coach{position:fixed;left:50%;transform:translateX(-50%);
+  top:calc(var(--head-h) + var(--jbar-h) + 10px);z-index:44;
+  width:calc(100% - var(--pad) * 2);max-width:452px;
+  padding:15px 16px 13px;border-radius:14px;
+  background:var(--panel);border:1px solid var(--sage-dim);
+  box-shadow:0 10px 30px rgba(0,0,0,.45)}
+.coach-text{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px}
+.coach .btn{flex:0 0 auto;padding:9px 18px;font-size:13px}
+.cyc-day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;overflow:hidden}
+.tbl{margin:0 var(--pad) 14px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;overflow:hidden}
+.trow{display:grid;grid-template-columns:52px minmax(0,1fr) minmax(0,1fr);
+  align-items:stretch;cursor:default}
+.trow[data-day]{cursor:pointer}
+.trow[data-day]:active{background:rgba(255,255,255,.03)}
+.trow+.trow{border-top:1px solid var(--hairline)}
+.rrow-chart{display:none;padding:12px 14px 16px;border-top:1px solid var(--hairline);
+  background:var(--panel)}
+.rrow-chart.open{display:block}
+.trow.hd{background:transparent}
+.trow.hd div{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  padding:11px 10px}
+.trow .dcell{padding:9px 10px;font-size:13px;color:var(--muted);
+  font-variant-numeric:tabular-nums;display:flex;flex-direction:column;justify-content:flex-start}
+.trow .dcell b{font-size:13px;color:var(--text);font-weight:700;letter-spacing:-.01em}
+.cell{background:var(--card-day);padding:9px 10px;display:grid;
+  grid-template-columns:1fr auto;align-items:baseline;gap:4px 8px;
+  font-variant-numeric:tabular-nums}
+.cell.pm{background:var(--card-night)}
+.cell-main{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 6px;min-width:0}
+.cell .pre{font-size:19px;font-family:var(--f-display);line-height:1.1}
+.cell .arr{font-size:11px;color:var(--faint)}
+.cell .min{font-size:14px}
+.cell .lag{font-size:9px;color:var(--faint);margin-left:1px;align-self:center}
+.cell .d{font-size:10.5px;color:var(--insulin);border:1px solid color-mix(in srgb,var(--insulin) 40%,transparent);
+  border-radius:99px;padding:1px 6px;white-space:nowrap}
+.cell .d.skip{color:var(--faint);border-color:var(--hairline)}
+.cell .dash{font-size:14px;color:var(--faint)}
+
+/* А: два рядки — передукольне(час) з дозою-крапкою зверху, надір(+N год) знизу */
+.cell2{background:var(--card-day);padding:9px 10px;font-variant-numeric:tabular-nums;
+  min-width:0;letter-spacing:-.01em}
+.cell2.pm{background:var(--card-night)}
+.cell2-row1{display:flex;align-items:baseline;gap:6px}
+.cell2-row2{display:flex;align-items:baseline;gap:6px;margin-top:2px}
+.cell2 .v1,.cell2 .v2,.cell2 .t1,.cell2 .t2,.cell2 .dash{
+  font-family:var(--f-body);font-size:13px;letter-spacing:-.01em}
+/* момент уколу і доза — жирним, найнижче виміряне звичайним */
+.cell2 .v1,.cell2 .t1{font-weight:700}
+.cell2 .v2,.cell2 .t2,.cell2 .dash{font-weight:400}
+.cell2 .t1,.cell2 .t2{color:var(--faint)}
+.cell2 .dash{color:var(--faint)}
+.dose-dot{display:flex;align-items:center;gap:5px;margin-left:auto;font-weight:700;
+  font-size:13px;color:var(--insulin);white-space:nowrap;letter-spacing:-.01em}
+.dose-dot i{width:6px;height:6px;border-radius:50%;background:var(--insulin);flex:0 0 auto}
+.dose-dot.skip i{background:none;box-shadow:inset 0 0 0 1.3px var(--faint)}
+.cyc-head{padding:14px 18px 12px;display:flex;align-items:baseline;justify-content:space-between}
+.cyc-half{display:grid;grid-template-columns:76px 1fr 1fr 1fr;gap:8px;align-items:baseline;
+  padding:13px 18px;border-top:1px solid var(--hairline)}
+.cyc-half.night{background:var(--card-night)}
+.cyc-half .lbl{font-size:12px;color:var(--muted)}
+.cyc-half .lbl b{display:block;font-size:11px;color:var(--faint);font-weight:400;
+  font-variant-numeric:tabular-nums}
+.cyc-half .v{font-size:17px;font-variant-numeric:tabular-nums;text-align:right}
+.cyc-half .v small{display:block;font-size:10.5px;color:var(--faint);letter-spacing:.04em;
+  text-transform:uppercase;margin-bottom:3px}
+.cyc-half .none{font-size:12px;color:var(--faint);font-style:italic}
+.cyc-half .lag{font-size:10.5px;color:var(--faint);line-height:1.5}
+.cyc-cols{display:grid;grid-template-columns:76px 1fr 1fr 1fr;gap:8px;padding:0 18px 10px}
+.cyc-cols span{font-size:10px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);text-align:right}
+.cyc-cols span:first-child{text-align:left}
+
+.u-day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;padding:16px 18px}
+.u-top{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;gap:12px}
+.u-total{font-family:var(--f-display);font-size:21px;font-weight:400;
+  font-variant-numeric:tabular-nums;display:flex;align-items:baseline;gap:8px}
+.u-total span{font-family:var(--f-body);font-size:11.5px;color:var(--faint)}
+.u-chips{display:flex;flex-wrap:wrap;gap:6px}
+.u-chip{font-size:12px;padding:6px 11px;border-radius:10px;background:var(--panel);
+  border:1px solid var(--hairline);font-variant-numeric:tabular-nums;cursor:pointer}
+.u-chip{display:inline-grid;grid-template-columns:38px 34px;align-items:baseline}
+.u-chip b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.stool{margin-top:14px;font-size:13px;color:var(--muted);line-height:1.5;display:flex;gap:9px}
+.stool b{color:var(--muted);font-weight:500}
+.med-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.med-state{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.med-state.on{color:var(--sage-dim)}
+.med .warn{color:#E0A03C;font-weight:500}
+.mlist{margin-top:12px;border-top:1px solid var(--hairline)}
+.mrow{display:grid;grid-template-columns:48px 1fr 44px;gap:8px;align-items:baseline;
+  padding:8px 0;font-size:12.5px;font-variant-numeric:tabular-nums;cursor:pointer}
+.mrow+.mrow{border-top:1px solid var(--hairline)}
+.mrow:active{opacity:.6}
+.mrow .md{color:var(--faint)}
+.mrow .mq{color:var(--text)}
+.mrow .mt{color:var(--faint);text-align:right;font-size:11px}
+.mrow .mn{grid-column:2/4;color:var(--faint);font-size:11.5px;margin-top:-2px}
+.mmore{font-size:11px;color:var(--faint);margin-top:9px}
+.medpick{display:flex;flex-direction:column;gap:6px}
+.mp-row{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:center}
+.mp-chip{background:none;border:1px solid var(--hairline);color:var(--faint);
+  font-family:inherit;font-size:12.5px;padding:8px 13px;border-radius:99px;cursor:pointer;
+  white-space:nowrap}
+.medbox.picked .mb-sum{color:var(--sage-dim)}
+.mp-row.on .mp-chip{border-color:color-mix(in srgb,var(--sage) 45%,transparent);
+  color:var(--sage-dim);background:color-mix(in srgb,var(--sage) 9%,transparent)}
+.mp-qty{background:var(--form-field);border:1px solid var(--hairline);border-radius:10px;
+  color:var(--text);font-family:inherit;font-size:13px;padding:9px 10px;min-width:0;
+  opacity:.35;pointer-events:none}
+.mp-row.on .mp-qty{opacity:1;pointer-events:auto}
+.med-acts{display:flex;gap:8px;margin:14px var(--pad)}
+.med-acts .btn.ghost{flex:1 1 0;white-space:nowrap;font-size:12.5px;padding:11px 10px}
+.btn.small{font-size:12px;padding:9px 14px;margin-top:12px}
+.past{margin:6px var(--pad) 20px}
+.past>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
+  font-size:12.5px;color:var(--muted);padding:12px 4px}
+.past>summary::-webkit-details-marker{display:none}
+.past[open]>summary .mb-chev{transform:rotate(180deg)}
+/* Форма зеленувата (--form), тому нейтрально-сірий блок ліків у ній читався
+   як чужий елемент. Беремо той самий фон, що й решта полів форми. */
+.medbox{border:1px solid var(--hairline);border-radius:12px;background:var(--form-field)}
+.medbox>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;
+  padding:12px 13px}
+.medbox>summary::-webkit-details-marker{display:none}
+.medbox[open]>summary .mb-chev{transform:rotate(180deg)}
+.mb-label{font-size:12px;color:var(--muted)}
+/* Зелений у формі означає «вибрано», а не «це ліки». Поки нічого не
+   позначено, підпис такий самий сірий, як решта підказок. */
+.mb-sum{flex:1;min-width:0;font-size:12.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mb-chev{display:inline-flex;line-height:0;color:var(--faint);transition:transform .18s}
+.medbox .medpick{padding:2px 13px 13px}
+/* оголошено раніше за .seg-in, тому підсилюємо селектором */
+/* Три контроли на 375 px не вміщались і розсували сторінку вбік — а разом з
+   нею роз'їжджалась липка колонка дат, і таблиця виглядала задвоєною. */
+/* Липка: журнал відкривається на найсвіжіших, тобто внизу, і якби панель
+   лишалась угорі, до сортування довелося б гортати через усі записи.
+   З кадру її прибирає режим перегляду, а не відсутність липкості. */
+.jbar{position:sticky;top:var(--head-h);z-index:30;display:flex;gap:8px;
+  overflow-x:auto;scrollbar-width:none;
+  align-items:center;padding:10px var(--pad) 12px;background:var(--bg);
+  border-bottom:1px solid var(--hairline);transition:top .22s,transform .22s ease}
+body.hh .jbar{top:0}
+
+.jbar::-webkit-scrollbar{display:none}
+.ordbtn.icon{padding:9px 10px}
+.ordbtn{flex:0 0 auto;display:flex;align-items:center;gap:5px;background:none;
+  border:1px solid var(--hairline);border-radius:11px;color:var(--muted);
+  font-family:inherit;font-size:11.5px;padding:9px 11px;cursor:pointer;white-space:nowrap}
+.ordbtn:active{color:var(--text)}
+.dtable{margin:0 var(--pad) 24px;font-variant-numeric:tabular-nums}
+/* Ширини колонок у px і на .dtable, а не в ch: ch рахується від власного
+   font-size елемента, а в заголовка він 9px проти 12.5px у рядків — саме через
+   це підписи стояли не над своїми колонками. */
+/* Колонка вузька навмисно: кожен зайвий піксель тут — це піксель, якого
+   бракує нотаткам, а там він вирішує, чи перенесеться рядок. Тому заголовок
+   короткий («ммоль»), а не «глюкоза». */
+.dtable{--c-date:42px;--c-time:40px;--c-glu:46px}
+/* flex, а не grid: у grid порожні комірки примудрялись породжувати другий ряд
+   і рядок виростав до 35px замість 22 при тому самому вмісті. */
+.dr{display:flex;align-items:flex-start;gap:5px;padding:3px 6px;
+  font-size:12.5px;line-height:16px;cursor:pointer}
+.dr>*{min-height:0;line-height:16px;padding-top:0;padding-bottom:0}
+.dd{flex:0 0 var(--c-date)}
+.dt{flex:0 0 var(--c-time)}
+.dg{flex:0 0 var(--c-glu)}
+.dx{flex:1 1 auto}
+.dr:nth-child(even){background:rgba(255,255,255,.022)}
+.dr.d0{border-top:1px solid var(--hairline)}
+.dr.dh{position:sticky;top:calc(var(--head-h) + var(--jbar-h));background:var(--bg);border:0;cursor:default;
+  font-size:9px;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);
+  padding-top:8px;padding-bottom:7px;z-index:2;
+  box-shadow:0 1px 0 var(--hairline);transition:top .22s}
+body.hh .dr.dh{top:var(--jbar-h)}
+.dr.dh:nth-child(even){background:var(--bg)}
+.dr.dh{line-height:12px}
+.dr.dh>*{line-height:12px}
+.dr.dh .dx{flex:1 1 auto}
+.dr.dh .dg,.dr.dh .dx{white-space:nowrap}
+.dr.dh .dd,.dr.dh .dt{font-weight:400;color:var(--faint)}
+.dr:active{background:rgba(255,255,255,.05)}
+.dd{color:var(--text);font-weight:500}
+.dt{color:var(--muted);white-space:nowrap}
+.dg{font-weight:500;padding-left:9px;white-space:nowrap}
+.dx{color:var(--muted);min-width:0;word-break:break-word;padding-left:7px}
+.dx .ins{color:var(--insulin);font-weight:500}
+.dx i{font-style:normal;color:var(--sage-dim)}
+.dx .dn{color:var(--faint)}
+.foodchips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.fc{background:none;border:1px solid var(--hairline);color:var(--faint);font-family:inherit;
+  font-size:11.5px;padding:6px 11px;border-radius:99px;cursor:pointer;max-width:100%;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fc:active{color:var(--text)}
+.seg.wrap{flex-wrap:wrap}
+.seg.wrap button{flex:0 0 auto;padding:8px 12px}
+.stool::before{content:"";width:7px;height:7px;border-radius:50%;
+  background:var(--sage-dim);flex:0 0 auto;margin-top:6px}
+.med{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;padding:16px 18px}
+.med .sub{font-size:13px;color:var(--muted);line-height:1.7;margin-top:6px}
+
+.scrim{position:fixed;inset:0;background:rgba(6,7,8,.72);z-index:60;
+  opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.open{opacity:1;pointer-events:auto}
+.sheet{position:fixed;bottom:0;left:50%;transform:translate(-50%,100%);width:100%;
+  visibility:hidden;
+  max-width:480px;z-index:70;background:var(--form);border-radius:24px 24px 0 0;
+  border-top:1px solid var(--hairline);padding:8px 20px calc(26px + env(safe-area-inset-bottom));
+  transition:transform .28s cubic-bezier(.32,.72,0,1);max-height:90vh;overflow-y:auto}
+.sheet.open{transform:translate(-50%,0);visibility:visible}
+.grab{width:38px;height:4px;border-radius:99px;background:var(--hairline);margin:6px auto 20px}
+.sheet h2{font-family:var(--f-display);font-size:19px;font-weight:500;margin-bottom:18px}
+.seg{display:flex;gap:4px;background:var(--form-field);border-radius:12px;padding:4px;margin-bottom:18px}
+.seg button{flex:1;background:none;border:0;cursor:pointer;font-family:inherit;
+  font-size:13px;color:var(--muted);padding:9px;border-radius:9px}
+.seg button.on{background:var(--panel);color:var(--text)}
+.field{margin-bottom:15px}
+.field label{display:block;font-size:11.5px;color:var(--faint);margin-bottom:7px}
+.field input,.field textarea{width:100%;background:var(--form-field);
+  border:1px solid var(--hairline);border-radius:12px;padding:13px 14px;
+  color:var(--text);font-family:inherit;font-size:15px}
+.field textarea{resize:vertical;min-height:66px;font-size:14px}
+.field input:focus,.field textarea:focus{outline:2px solid var(--sage-dim);outline-offset:-1px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.hint{font-size:11px;color:var(--faint);margin-top:6px}
+.time-mask{font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.acts{display:flex;gap:10px;margin-top:22px}
+.btn{flex:1;padding:15px;border-radius:14px;border:0;cursor:pointer;
+  font-family:inherit;font-size:14.5px;font-weight:600}
+.btn.primary{background:var(--sage);color:#171A11}
+.btn.fill{width:100%}
+.btn.ghost{background:none;border:1px solid var(--hairline);color:var(--muted);flex:0 0 34%}
+.btn.arm{background:#B3252F;border-color:#B3252F;color:#fff;flex:0 0 52%}
+.del-hint{font-size:11.5px;color:#E0504F;text-align:center;margin-top:10px}
+
+.side{display:none}
+.side h3{font-family:var(--f-display);font-size:15px;font-weight:500;margin-bottom:14px;color:var(--muted)}
+.side .big{font-family:var(--f-display);font-size:52px;font-weight:400;line-height:1;font-variant-numeric:tabular-nums}
+.side .big span{font-family:var(--f-body);font-size:12px;color:var(--faint);margin-left:8px}
+.side .sub{font-size:13px;color:var(--muted);margin-top:10px;line-height:1.7}
+.side hr{border:0;border-top:1px solid var(--hairline);margin:22px 0}
+
+@media(min-width:900px){
+  :root{--pad:24px}
+  /* сітку задає пізніший блок з бічною навігацією */
+  .app{display:grid;align-items:start}
+  header{grid-column:1/-1}
+  /* min-width:0 обов'язковий: за замовчуванням елемент сітки не звужується
+     нижче за власний зміст, а всередині лежить графік завширшки в тисячі
+     пікселів — і замість того щоб гортатись, він розсував усю верстку. */
+  main{min-width:0}
+  .side{min-width:0}
+  .side{display:block;position:sticky;top:calc(var(--head-h) + 24px);padding:24px 28px}
+  .entry{grid-template-columns:60px 1fr}
+  .gutter::before,.gutter::after{left:30px}
+  .node{left:25px}
+  .sheet{left:auto;right:32px;transform:translateY(120%);max-width:400px;border-radius:24px;bottom:26px}
+  .sheet.open{transform:translateY(0)}
+}
+
+/* ---------- зведення: перемикач подань ---------- */
+.seg-top{display:flex;gap:3px;margin:0 var(--pad) 14px;background:var(--panel);
+  border:1px solid var(--hairline);border-radius:13px;padding:4px}
+.seg-top button{flex:1;background:none;border:0;cursor:pointer;font-family:inherit;
+  font-size:12.5px;color:var(--muted);padding:9px 2px;border-radius:10px;white-space:nowrap}
+.seg-top button.on{background:var(--card-day);color:var(--text)}
+.box{margin:0 var(--pad) 14px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;padding:16px 16px 14px;overflow:hidden}
+.box h4{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;margin-bottom:5px}
+.box .cap{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:14px}
+.box svg{display:block;width:100%;height:auto}
+.seg-in{display:flex;gap:3px;background:var(--panel);border:1px solid var(--hairline);
+  border-radius:11px;padding:3px;margin:0 var(--pad) 12px;max-width:340px}
+.seg-in button{flex:1;background:none;border:0;cursor:pointer;font-family:inherit;
+  font-size:12px;color:var(--muted);padding:7px 4px;border-radius:8px;white-space:nowrap}
+.seg-in button.on{background:var(--card-day);color:var(--text)}
+
+/* сітка по годинах */
+.grow{display:grid;grid-template-columns:42px 1fr 58px;gap:9px;align-items:center;margin-bottom:3px}
+.gd{font-size:10.5px;color:var(--insulin);text-align:right;font-variant-numeric:tabular-nums;
+  white-space:nowrap;opacity:.85}
+.grow .gl{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.gcells{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:2px}
+.gc{position:relative;height:18px;border-radius:3px;background:#191A1D}
+.gc.off{background:transparent}
+.gc.night{background:#101113}
+.grow .gl{display:flex;align-items:center;gap:4px}
+.glong{font-size:9px;color:var(--insulin);opacity:.75}
+.gc.ins::after{content:"";position:absolute;left:50%;top:50%;width:7px;height:7px;
+  border-radius:50%;background:var(--insulin);transform:translate(-50%,-50%);
+  box-shadow:0 0 0 1.5px rgba(0,0,0,.45)}
+.gc.ins-skip::after{content:"";position:absolute;left:50%;top:50%;width:7px;height:7px;
+  border-radius:50%;transform:translate(-50%,-50%);
+  box-shadow:inset 0 0 0 1.5px var(--insulin),0 0 0 1.5px rgba(0,0,0,.45)}
+.gruler{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:2px;margin-top:7px}
+.gruler span{font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* тренд і загальний графік */
+.chart-box{margin:0 var(--pad) 14px;background:var(--card);border:1px solid var(--hairline);
+  border-radius:18px;padding:16px 16px 14px;overflow:hidden}
+.chart-box h4{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
+  font-weight:500;margin-bottom:5px}
+.chart-box .cap{font-size:12px;color:var(--muted);line-height:1.55;margin-bottom:14px}
+.chart-box > svg{display:block;width:100%;height:auto}
+.scrollx{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;
+  max-width:100%;margin:0 -16px;padding:0 16px}
+.scrollx svg{display:block}
+.scroll-hint{font-size:10.5px;color:var(--faint);margin-top:9px}
+.dtrange{display:flex;gap:8px;align-items:center;margin:0 var(--pad) 12px}
+.dtrange input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--hairline);
+  color:var(--text);font-family:inherit;font-size:13px;padding:9px 10px;border-radius:10px;
+  color-scheme:dark}
+.dtrange span{font-size:12px;color:var(--faint)}
+.bands{display:flex;flex-wrap:wrap;gap:7px 13px;margin-top:15px}
+.bands span{font-size:10.5px;color:var(--faint);display:flex;align-items:center;gap:5px}
+.bands i{width:9px;height:9px;border-radius:2px;display:block;flex:0 0 auto}
+
+
+
+@media(prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* ── стани завантаження, мережі й режиму перегляду ── */
+.empty{padding:56px var(--pad);text-align:center;color:var(--muted);
+  font-size:14px;line-height:1.65}
+
+.env{position:absolute;top:6px;right:var(--pad);
+  font-family:var(--f-body);font-size:9px;font-weight:700;letter-spacing:.09em;
+  color:#fff;background:#B3252F;border-radius:0 0 4px 4px;padding:1px 6px 2px}
+
+/* Знизу, а не зверху: шапка ховається при гортанні, а це має бути видно завжди. */
+/* над баром, а не поверх нього */
+.banner{position:fixed;left:0;right:0;bottom:57px;z-index:59;
+  padding:11px var(--pad);font-size:12.5px;line-height:1.45;text-align:center;
+  background:var(--panel);color:var(--muted);
+  border-top:1px solid var(--hairline)}
+.banner.wait{color:#E8C05A}
+.banner.err{color:#E0504F;cursor:pointer;text-decoration:underline;
+  text-decoration-style:dotted;text-underline-offset:3px}
+.banner[hidden]{display:none}
+
+.morebar{display:flex;justify-content:center;padding:14px var(--pad) 6px}
+.morebar .btn{flex:0 0 auto;white-space:nowrap;font-size:12.5px;padding:9px 18px}
+
+/* Язичок до найновіших: з'являється, лише коли ти від них далеко. */
+/* над нижнім баром, а не під ним */
+.jump{position:fixed;right:var(--pad);bottom:76px;z-index:45;
+  width:42px;height:42px;border-radius:50%;padding:0;
+  background:var(--panel);color:var(--muted);border:1px solid var(--hairline);
+  font-family:inherit;font-size:17px;line-height:1;
+  cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.jump[hidden]{display:none}
+body.shot .jump{display:none}
+
+/* режим скріншота: з кадру йде все, що не є даними */
+body.shot .env{display:none}
+/* Кнопка запису в режимі перегляду ховається, і колонка під неї лишала діру
+   посеред смуги. Прибираємо саму колонку. */
+body.shot .tabbar{grid-template-columns:repeat(4,1fr)}
+.ordbtn.on{color:var(--sage);border-color:color-mix(in srgb,var(--sage) 45%,transparent)}
+
+/* режим перегляду: записів не додають, тому рядки не вдають клікабельність */
+body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
+
+/* ── нижній бар ───────────────────────────────────────────────────────
+   Керування переїхало вниз, під великий палець: журнал заповнюють уночі
+   однією рукою. Верх екрана лишається даним. */
+.tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;z-index:60;
+  width:100%;max-width:480px;display:grid;
+  grid-template-columns:1fr 1fr 68px 1fr 1fr;align-items:end;
+  background:rgba(23,24,26,.96);backdrop-filter:blur(16px);
+  border-top:1px solid var(--hairline);transition:transform .22s ease;
+  padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+.tabbar button{background:none;border:0;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:9.5px;color:var(--faint);padding:4px 2px;line-height:1.2}
+.tabbar button svg{width:20px;height:20px;display:block;fill:none;
+  stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar button[aria-selected="true"]{color:var(--sage)}
+.tabbar .fab{background:var(--sage);color:#171A11;width:54px;height:54px;
+  border-radius:50%;justify-self:center;align-self:center;margin-top:-20px;
+  align-items:center;justify-content:center;font-size:25px;padding:0;
+  box-shadow:0 6px 18px rgba(0,0,0,.4)}
+.tabbar .fab.hidden{display:none}
+
+/* Режим скріншота ховає весь хром, а не лише кнопку: інакше в кадр однаково
+   лізуть панелі. Шапка при цьому теж не липне. */
+/* У режимі перегляду хром не зникає назовсім: інакше з нього неможливо
+   вийти — кнопка виходу зникала разом з панеллю. Замість цього все ховається
+   при гортанні вниз і повертається від найменшого руху вгору. */
+body.shot .env{display:none}
+body.shot main{padding-bottom:24px}
+body.shot .banner{bottom:0}
+body.shot.hh .jbar{transform:translateY(-100%)}
+/* «＋» піднятий над смугою на 20 px, тому зсуву рівно на її висоту мало —
+   знизу лишався шматок кнопки. */
+body.shot.hh .tabbar{transform:translate(-50%,calc(100% + 28px))}
+body.shot.hh .dr.dh{top:0}
+/* У режимі перегляду рядки не відкривають форму — можна спокійно показати
+   журнал з телефона, нічого не зачепивши. */
+body.shot .dr,body.shot .u-chip,body.shot .mrow,body.shot .day-head{cursor:default}
+/* Виділення діапазону: те саме, що виділити клітинки в таблиці перед
+   скріншотом — показати лікарці саме ті рядки, які ще не надсилались. */
+body.shot .dr[data-edit]{cursor:pointer}
+.dr.sel{background:rgba(163,197,133,.07)}
+.dr.sel-a{box-shadow:inset 0 1px 0 var(--sage)}
+.dr.sel-b{box-shadow:inset 0 -1px 0 var(--sage)}
+.dr.sel-a.sel-b{box-shadow:inset 0 1px 0 var(--sage),inset 0 -1px 0 var(--sage)}
+.jhint{flex:0 0 auto;font-size:11.5px;color:var(--faint);white-space:nowrap}
+
+/* Розділ «Ще» */
+.more-list{padding:8px var(--pad) 0}
+.more-item{display:flex;align-items:center;gap:12px;width:100%;
+  background:none;border:0;border-bottom:1px solid var(--hairline);
+  padding:16px 2px;font-family:inherit;font-size:14.5px;color:var(--text);
+  text-align:left;cursor:pointer;text-decoration:none}
+.more-item .mi-sub{margin-left:auto;font-size:12px;color:var(--faint)}
+.more-note{padding:18px var(--pad);font-size:12px;color:var(--faint);line-height:1.6}
+
+/* ── десктоп ──────────────────────────────────────────────────────────
+   Нижній бар — рішення для великого пальця. На широкому екрані місця
+   вистачає, тому ті самі кнопки стають бічною колонкою ліворуч, а «＋»
+   піднімається над ними окремою кнопкою. Розмітка та сама, міняється лише
+   розкладка — обидва режими лишаються одним кодом. */
+@media(min-width:900px){
+  .app{max-width:1240px;
+    grid-template-columns:190px minmax(0,1fr) 330px;
+    grid-template-rows:auto 1fr}
+  header{grid-column:1/-1;grid-row:1}
+
+  .tabbar{position:sticky;top:calc(var(--head-h) + 18px);z-index:39;
+    grid-column:1;grid-row:2;
+    width:auto;max-width:none;left:auto;bottom:auto;transform:none;
+    display:flex;flex-direction:column;align-items:stretch;gap:3px;
+    padding:18px 12px;background:transparent;backdrop-filter:none;
+    border-top:0;border-right:1px solid var(--hairline)}
+  .tabbar button{flex-direction:row;justify-content:flex-start;gap:11px;
+    font-size:13.5px;padding:10px 12px;border-radius:10px}
+  .tabbar button svg{width:18px;height:18px}
+  .tabbar button[aria-selected="true"]{background:rgba(163,197,133,.12)}
+  .tabbar .fab{order:-1;width:auto;height:auto;margin:0 0 14px;
+    border-radius:10px;padding:11px 12px;font-size:16px;
+    justify-content:flex-start;box-shadow:none}
+  .tabbar .fab::after{content:"Запис";font-size:13.5px;margin-left:9px}
+
+  main{grid-column:2;grid-row:2;padding-bottom:56px}
+  .side{grid-column:3;grid-row:2;min-width:0}
+
+  /* шапка на десктопі не ховається: місця досить, а стрибки дратують */
+  body.hh header{transform:none}
+  body.shot.hh .tabbar,body.shot.hh .jbar{transform:none}
+
+  .jump{bottom:26px;right:calc(50% - 620px + var(--pad))}
+  .banner{bottom:0;left:50%;transform:translateX(-50%);max-width:1240px}
+}

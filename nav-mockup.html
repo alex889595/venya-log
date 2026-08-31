@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Веня — макети навігації</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+/* Тільки для макета: перемикач варіантів і те, чого ще немає в styles.css */
+.pick{position:fixed;top:0;left:0;right:0;z-index:200;display:flex;gap:6px;
+  align-items:center;padding:8px 12px;background:#0B0C0D;
+  border-bottom:1px solid var(--hairline);font-family:var(--f-body);font-size:12px}
+.pick button{background:none;border:1px solid var(--hairline);color:var(--muted);
+  border-radius:99px;padding:7px 13px;font-family:inherit;font-size:12px;cursor:pointer}
+.pick button.on{background:var(--sage);color:#171A11;border-color:var(--sage)}
+.pick .chrome{margin-left:auto;color:var(--faint);font-variant-numeric:tabular-nums}
+body{padding-top:var(--pick-h,46px)}
+/* Смуга вибору варіанта — частина стенда, а не макета. Тому всі липкі
+   елементи всередині зсуваємо рівно на її висоту. */
+.head-slim{top:var(--pick-h,46px)}
+#app header{top:var(--pick-h,46px)}
+#app .jbar{top:calc(var(--pick-h,46px) + var(--head-h))}
+#app .dr.dh{top:calc(var(--pick-h,46px) + var(--head-h) + var(--jbar-h))}
+#app .secbar ~ .dtable .dr.dh{top:calc(var(--pick-h,46px) + 49px)}
+
+/* ── коротка шапка (варіанти 1 і 3) ── */
+.head-slim{position:sticky;z-index:40;display:flex;align-items:baseline;
+  justify-content:space-between;gap:12px;padding:12px var(--pad);
+  background:rgba(23,24,26,.92);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--hairline)}
+.head-slim h1{font-size:17px}
+.head-slim .cat{font-style:normal;margin-right:6px}
+
+/* ── панель розділу, що НЕ липка: гортається разом з даними ── */
+.secbar{display:flex;gap:8px;padding:10px var(--pad);overflow-x:auto;
+  scrollbar-width:none;border-bottom:1px solid var(--hairline)}
+.secbar::-webkit-scrollbar{display:none}
+
+/* ── нижній бар ── */
+.tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;z-index:60;
+  width:100%;max-width:480px;display:grid;grid-template-columns:1fr 1fr 64px 1fr 1fr;
+  align-items:end;background:rgba(23,24,26,.96);backdrop-filter:blur(16px);
+  border-top:1px solid var(--hairline);
+  padding:8px 0 calc(8px + env(safe-area-inset-bottom))}
+.tabbar button{background:none;border:0;cursor:pointer;font-family:inherit;
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  font-size:10px;color:var(--faint);padding:4px 0}
+.tabbar button.on{color:var(--sage)}
+.tabbar svg{display:block}
+.tabbar .fab{background:var(--sage);color:#171A11;width:52px;height:52px;
+  border-radius:50%;justify-self:center;align-self:center;margin-top:-18px;
+  align-items:center;justify-content:center;font-size:24px;line-height:1;
+  box-shadow:0 6px 18px rgba(0,0,0,.4)}
+
+/* ── чіпи-фільтри (варіант 3) ── */
+.filters{display:flex;gap:7px;padding:12px var(--pad);overflow-x:auto;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.filters button{background:none;border:1px solid var(--hairline);color:var(--faint);
+  border-radius:99px;padding:7px 13px;font-family:inherit;font-size:12px;
+  cursor:pointer;white-space:nowrap}
+.filters button.on{border-color:color-mix(in srgb,var(--sage) 50%,transparent);color:var(--sage)}
+
+/* ── варіант 4: щільна таблиця з добовою шапкою ──
+   Колонка дат зникає: дата стає заголовком доби. Звільнені ~42 px ідуть
+   колонці маніпуляцій, тому довгі рядки рідше переносяться — а саме перенос,
+   а не висота рядка, і дає більшу частину висоти. Добові чіпи (сеча, стул)
+   стоять рівно над тією колонкою, якої стосуються. */
+.v4{margin:0 var(--pad) 24px;font-variant-numeric:tabular-nums;
+  --c-time:44px;--c-glu:58px}
+.v4 .dayhead{display:flex;gap:5px;align-items:baseline;
+  padding:14px 6px 6px;border-bottom:1px solid var(--hairline)}
+.v4 .dh-date{flex:0 0 calc(var(--c-time) + var(--c-glu) + 5px);
+  font-family:var(--f-display);font-size:15px}
+.v4 .dh-chips{flex:1;display:flex;gap:5px;flex-wrap:wrap}
+.v4 .dh-chips .meta{font-size:10.5px;padding:3px 8px}
+.v4 .row{display:flex;gap:5px;align-items:flex-start;padding:2px 6px;
+  font-size:13px;line-height:15px}
+.v4 .row:nth-child(even){background:rgba(255,255,255,.022)}
+.v4 .rt{flex:0 0 var(--c-time);color:var(--muted);font-size:12.5px}
+.v4 .rg{flex:0 0 var(--c-glu);font-weight:500;padding-left:9px;white-space:nowrap}
+.v4 .rx{flex:1 1 auto;min-width:0;color:var(--muted)}
+.v4 .rx b{color:var(--insulin);font-weight:500}
+
+.feed-row{display:flex;gap:10px;padding:11px var(--pad);border-bottom:1px solid var(--hairline);
+  align-items:baseline;font-size:13.5px}
+.feed-row .ft{color:var(--muted);font-size:12.5px;min-width:42px;font-variant-numeric:tabular-nums}
+.feed-row .fv{font-family:var(--f-display);font-size:19px;min-width:48px}
+.feed-row .fx{color:var(--muted);font-size:12.5px;line-height:1.45}
+.feed-day{padding:16px var(--pad) 8px;font-family:var(--f-display);font-size:16px}
+.pad-bottom{height:96px}
+.note-box{margin:14px var(--pad);padding:12px 14px;border:1px solid var(--hairline);
+  border-radius:12px;background:var(--panel);font-size:12.5px;color:var(--muted);line-height:1.55}
+</style>
+</head>
+<body>
+
+<div class="pick">
+  <button data-v="1" class="on">1 · нижній бар</button>
+  <button data-v="2">2 · менше розділів</button>
+  <button data-v="3">3 · одна стрічка</button>
+  <button data-v="4">4 · щільна доба</button>
+  <span class="chrome" id="chrome"></span>
+</div>
+
+<div class="app" id="app"></div>
+
+<script>
+/* Заглушка: кілька справжніх на вигляд рядків, щоб порівнювати саме навігацію. */
+const ROWS=[
+  ['30.08','03:45','5,1','#A3C585',''],
+  ['','02:45','4,7','#E0504F','корм вологий 18 г'],
+  ['','22:45','9,8','#A3C585','0,25 ОД, корм вологий 70 г, Псиліум'],
+  ['','20:00','7,7','#A3C585',''],
+  ['29.08','16:45','7,8','#A3C585',''],
+  ['','14:45','7,7','#A3C585',''],
+  ['','12:45','6,8','#A3C585',''],
+  ['','10:45','7,3','#A3C585','0,25 ОД, корм вологий 50 г, Псиліум'],
+  ['','04:00','7,3','#A3C585',''],
+  ['28.08','22:00','32,7','#E0873C','0,5 ОД, корм вологий 85 г, Псиліум'],
+  ['','20:50','30,0','#E0873C',''],
+  ['','17:00','6,4','#A3C585',''],
+  ['','16:00','5,0','#A3C585','корм вологий 12 г'],
+  ['','10:00','24,7','#E0873C','0,5 ОД, корм вологий 85 г'],
+];
+
+const table=()=>`<div class="dtable">
+  <div class="dr dh"><span class="dd">Дата</span><span class="dt">Час</span>
+    <span class="dg">Ммоль</span><span class="dx">Маніпуляції / нотатки</span></div>
+  ${ROWS.map(r=>`<div class="dr${r[0]?' d0':''}">
+    <span class="dd">${r[0]}</span><span class="dt">${r[1]}</span>
+    <span class="dg" style="color:${r[3]}">${r[2]}</span>
+    <span class="dx">${r[4]}</span></div>`).join('')}
+</div><div class="pad-bottom"></div>`;
+
+const secbar=()=>`<div class="secbar">
+  <div class="seg-in jmode"><button class="on">Таблицею</button><button>Картками</button></div>
+  <button class="ordbtn">↓ старіше зверху</button>
+  <button class="ordbtn icon">◉</button>
+</div>`;
+
+const icon=d=>`<svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const I={
+  journal:'<path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h8M8 17h5"/>',
+  sum:'<path d="M3 17l5-6 4 4 5-8 4 5"/>',
+  meds:'<rect x="3" y="8" width="18" height="8" rx="4"/><path d="M12 8v8"/>',
+  cat:'<path d="M4 20v-7a8 8 0 0 1 16 0v7"/><path d="M6 6l2 3M18 6l-2 3"/>'
+};
+
+/* ── варіант 1: нижній бар ── */
+const v1=()=>`
+  <div class="head-slim">
+    <h1><em class="cat">${icon(I.cat)}</em>Веня <em>/ діабет відмітки</em></h1>
+    <div class="now">03:45 · <b>5,1</b></div>
+  </div>
+  ${secbar()}
+  ${table()}
+  <div class="tabbar">
+    <button class="on">${icon(I.journal)}Журнал</button>
+    <button>${icon(I.sum)}Зведення</button>
+    <button class="fab">＋</button>
+    <button>${icon(I.meds)}Ліки</button>
+    <button>⋯<span style="font-size:10px">Ще</span></button>
+  </div>`;
+
+/* ── варіант 2: як зараз, але три вкладки ── */
+const v2=()=>`
+  <header>
+    <div class="brand"><h1>Веня <em>/ діабет відмітки</em></h1>
+      <div class="now">03:45 · <b>5,1</b></div></div>
+    <div class="tabs">
+      <button class="tab" aria-selected="true">Журнал</button>
+      <button class="tab" aria-selected="false">Зведення</button>
+      <button class="tab" aria-selected="false">Ліки</button>
+    </div>
+  </header>
+  <div class="jbar">
+    <div class="seg-in jmode"><button class="on">Таблицею</button><button>Картками</button></div>
+    <button class="ordbtn">↓ старіше зверху</button>
+    <button class="ordbtn icon">◉</button>
+  </div>
+  ${table()}
+  <button class="add">＋ Запис</button>
+  <div class="note-box">«Сеча і стул» переїхала всередину «Зведення» — вона
+    за природою добовий підсумок, як і «По добах».</div>`;
+
+/* ── варіант 3: одна стрічка з фільтрами ── */
+const FEED=[
+  ['день','30 серпня'],
+  ['g','03:45','5,1','#A3C585',''],
+  ['g','02:45','4,7','#E0504F','корм вологий 18 г'],
+  ['u','01:50','60 мл','#5AA9E6','лоток'],
+  ['день','29 серпня'],
+  ['s','—','стул: нормальний','#C9A227','кал сформований'],
+  ['g','22:45','9,8','#A3C585','0,25 ОД'],
+  ['m','22:45','Псиліум','#A78BE0','1/10 ч.л'],
+  ['u','23:40','45 мл','#5AA9E6','лоток'],
+  ['g','20:00','7,7','#A3C585',''],
+  ['g','16:45','7,8','#A3C585',''],
+];
+const v3=()=>`
+  <div class="head-slim">
+    <h1><em class="cat">${icon(I.cat)}</em>Веня <em>/ діабет відмітки</em></h1>
+    <div class="now">03:45 · <b>5,1</b></div>
+  </div>
+  <div class="filters">
+    <button class="on">цукор</button><button class="on">сеча</button>
+    <button class="on">стул</button><button class="on">ліки</button>
+    <button>нотатки</button>
+  </div>
+  ${FEED.map(r=>r[0]==='день'
+    ? `<div class="feed-day">${r[1]}</div>`
+    : `<div class="feed-row"><span class="ft">${r[1]}</span>
+        <span class="fv" style="color:${r[3]}">${r[2]}</span>
+        <span class="fx">${r[4]}</span></div>`).join('')}
+  <div class="pad-bottom"></div>
+  <div class="tabbar">
+    <button class="on">${icon(I.journal)}Стрічка</button>
+    <button>${icon(I.sum)}Зведення</button>
+    <button class="fab">＋</button>
+    <button>${icon(I.meds)}Ліки</button>
+    <button>⋯<span style="font-size:10px">Ще</span></button>
+  </div>`;
+
+/* ── варіант 4 ── */
+const DAYS4=[
+  {date:'30 серпня', urine:'сеча 130 мл', stool:null, rows:[
+    ['03:45','5,1','#A3C585',''],
+    ['02:45','4,7','#E0504F','корм вологий 18 г'],
+  ]},
+  {date:'29 серпня', urine:'сеча 350 мл', stool:'стул: нормальний', rows:[
+    ['22:45','9,8','#A3C585','<b>0,25 ОД</b>, корм вологий 70 г, Псиліум'],
+    ['20:00','7,7','#A3C585',''],
+    ['16:45','7,8','#A3C585',''],
+    ['14:45','7,7','#A3C585',''],
+    ['12:45','6,8','#A3C585',''],
+    ['10:45','7,3','#A3C585','<b>0,25 ОД</b>, корм вологий 50 г, Псиліум'],
+    ['04:00','7,3','#A3C585',''],
+  ]},
+  {date:'28 серпня', urine:'сеча 310 мл', stool:'стул: не какав', rows:[
+    ['22:00','32,7','#E0873C','<b>0,5 ОД</b>, корм вологий 85 г, Псиліум'],
+    ['20:50','30,0','#E0873C',''],
+    ['17:00','6,4','#A3C585',''],
+    ['16:00','5,0','#A3C585','корм вологий 12 г'],
+    ['10:00','24,7','#E0873C','<b>0,5 ОД</b>, корм вологий 85 г'],
+  ]},
+];
+const v4=()=>`
+  <div class="head-slim">
+    <h1><em class="cat">${icon(I.cat)}</em>Веня <em>/ діабет відмітки</em></h1>
+    <div class="now">03:45 · <b>5,1</b></div>
+  </div>
+  ${secbar()}
+  <div class="v4">
+    ${DAYS4.map(d=>`
+      <div class="dayhead">
+        <span class="dh-date">${d.date}</span>
+        <span class="dh-chips">
+          ${d.urine?`<span class="meta">${d.urine}</span>`:''}
+          ${d.stool?`<span class="meta">${d.stool}</span>`:''}
+        </span>
+      </div>
+      ${d.rows.map(r=>`<div class="row">
+        <span class="rt">${r[0]}</span>
+        <span class="rg" style="color:${r[2]}">${r[1]}</span>
+        <span class="rx">${r[3]}</span></div>`).join('')}
+    `).join('')}
+  </div>
+  <div class="pad-bottom"></div>
+  <div class="tabbar">
+    <button class="on">${icon(I.journal)}Журнал</button>
+    <button>${icon(I.sum)}Зведення</button>
+    <button class="fab">＋</button>
+    <button>${icon(I.meds)}Ліки</button>
+    <button>⋯<span style="font-size:10px">Ще</span></button>
+  </div>`;
+
+const VARIANTS={1:v1,2:v2,3:v3,4:v4};
+
+function show(v){
+  document.getElementById('app').innerHTML=VARIANTS[v]();
+  document.querySelectorAll('.pick button').forEach(b=>
+    b.classList.toggle('on',b.dataset.v===v));
+  /* скільки місця з'їдає навігація, поки не почались дані */
+  requestAnimationFrame(()=>{
+    const app=document.getElementById('app');
+    const first=app.querySelector('.dtable, .feed-day, .v4');
+    const pick=document.querySelector('.pick').offsetHeight;
+    const top=first?first.getBoundingClientRect().top-pick:0;
+    const bar=app.querySelector('.tabbar');
+    const bottom=bar?bar.getBoundingClientRect().height:
+      (app.querySelector('.add')?70:0);
+    document.getElementById('chrome').textContent=
+      'хром: ' + Math.round(top) + ' зверху + ' + Math.round(bottom) + ' знизу';
+  });
+}
+document.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>show(b.dataset.v));
+
+function sizePicker(){
+  document.documentElement.style.setProperty(
+    '--pick-h', document.querySelector('.pick').offsetHeight+'px');
+}
+window.addEventListener('resize',sizePicker);
+sizePicker();
+show('1');
+</script>
+</body>
+</html>
