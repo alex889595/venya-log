@@ -31,6 +31,7 @@
   --f-body:'IBM Plex Sans',system-ui,sans-serif;
   --head-h:64px;
   --bar-h:51px;
+  --fab-r:27px;         /* радіус кнопки запису */
   --jbar-h:57px;
   --stick-h:0px;        /* measured after every render, see afterRender() */
   --pad:14px;
@@ -80,9 +81,11 @@ body.hh header{transform:translateY(-100%)}
   border-bottom:2px solid transparent;transition:color .15s}
 .tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--sage)}
 
-main{padding:0 0 76px}
+/* Запас знизу — під смугу і під половину кнопки, що стоїть над її краєм. */
+main{padding:0 0 96px}
 .legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0 var(--pad) 14px}
 .legend span{font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px}
+.legend b{font-size:11px;color:var(--faint);font-weight:500}
 
 /* ---------- one day as a card ---------- */
 .day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
@@ -231,9 +234,10 @@ body.hh .thead{top:0}
 .cell2 .v2,.cell2 .t2,.cell2 .dash{font-weight:400}
 .cell2 .t1,.cell2 .t2{color:var(--faint)}
 .cell2 .dash{color:var(--faint)}
-.dose-dot{display:flex;align-items:center;gap:5px;margin-left:auto;font-weight:700;
+.dose-dot{display:flex;align-items:baseline;gap:5px;margin-left:auto;font-weight:700;
   font-size:13px;color:var(--insulin);white-space:nowrap;letter-spacing:-.01em}
-.dose-dot i{width:6px;height:6px;border-radius:50%;background:var(--insulin);flex:0 0 auto}
+.dose-dot i{width:6px;height:6px;border-radius:50%;background:var(--insulin);
+  flex:0 0 auto;align-self:center}
 .dose-dot.skip i{background:none;box-shadow:inset 0 0 0 1.3px var(--faint)}
 .cyc-head{padding:14px 18px 12px;display:flex;align-items:baseline;justify-content:space-between}
 .cyc-half{display:grid;grid-template-columns:76px 1fr 1fr 1fr;gap:8px;align-items:baseline;
@@ -282,6 +286,7 @@ body.hh .thead{top:0}
 .urow .uv b{color:var(--text);font-weight:700;font-size:15px}
 .urow .urate{font-size:13.5px;color:var(--faint)}
 .urow .urate b{color:var(--sage);font-weight:700;font-size:15px}
+.urow .urate.hi b{color:#E8C05A}
 .urow .ust{font-size:12.5px;color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .urow.part .urate b{color:var(--faint)}
@@ -440,7 +445,15 @@ body.hh .dr.dh{top:0}
   transition:transform .28s cubic-bezier(.32,.72,0,1);max-height:90vh;overflow-y:auto}
 .sheet.open{transform:translate(-50%,0);visibility:visible}
 .grab{width:38px;height:4px;border-radius:99px;background:var(--hairline);margin:6px auto 20px}
-.sheet h2{font-family:var(--f-display);font-size:19px;font-weight:500;margin-bottom:18px}
+.sheet-head{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin-bottom:18px}
+.sheet h2{font-family:var(--f-display);font-size:19px;font-weight:500}
+/* The native picker glyph is black on a dark field and sits off the text
+   baseline. Tinting it to the muted grey is enough — replacing the control
+   would cost the tap target the browser gives for free. */
+.field input[type="date"]::-webkit-calendar-picker-indicator{
+  filter:invert(.62);opacity:.8;cursor:pointer;margin:0;padding:0}
+.field input[type="date"]::-webkit-inner-spin-button{display:none}
 .seg{display:flex;gap:4px;background:var(--form-field);border-radius:12px;padding:4px;margin-bottom:18px}
 .seg button{flex:1;background:none;border:0;cursor:pointer;font-family:inherit;
   font-size:13px;color:var(--muted);padding:9px;border-radius:9px}
@@ -597,7 +610,12 @@ body.shot .jump{display:none}
 body.shot .env{display:none}
 /* The record button is hidden in screenshot mode and its column left a hole in
    the middle of the bar. Drop the column itself. */
-body.shot .tabbar{grid-template-columns:repeat(4,1fr)}
+/* Немає кнопки — немає й колонки під неї. Явні номери колонок теж треба
+   зняти: у чотириколонковій сітці п'ятий номер породжував зайву колонку збоку,
+   і вкладки з'їжджали. */
+body.shot .tabbar,body.ro .tabbar{grid-template-columns:repeat(4,1fr)}
+body.shot .tabbar button[data-view],
+body.ro .tabbar button[data-view]{grid-column:auto}
 .ordbtn.on{color:var(--sage);border-color:color-mix(in srgb,var(--sage) 45%,transparent)}
 
 /* read-only role: nothing is added here, so rows do not fake being clickable */
@@ -609,9 +627,13 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
 .tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;z-index:60;
   width:100%;max-width:480px;display:grid;
   grid-template-columns:1fr 1fr 68px 1fr 1fr;align-items:end;
-  background:rgba(24,24,24,.96);backdrop-filter:blur(16px);
-  border-top:1px solid var(--hairline);transition:transform .22s ease;
+  transition:transform .22s ease;
   padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
+/* Фон окремим шаром під вмістом: смуга сама лишається прозорою, тому «+», що
+   виступає над її краєм, ні на що не натикається. */
+.tabbar::before{content:"";position:absolute;inset:0;z-index:-1;
+  background:rgba(24,24,24,.96);backdrop-filter:blur(16px);
+  border-top:1px solid var(--hairline)}
 .tabbar button{background:none;border:0;cursor:pointer;font-family:inherit;
   display:flex;flex-direction:column;align-items:center;gap:3px;
   font-size:11px;color:var(--faint);padding:4px 2px;line-height:1.25}
@@ -619,9 +641,23 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
   stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tabbar button[aria-selected="true"]{color:var(--sage)}
 .tabbar .fab{background:var(--sage);color:#181A10;width:54px;height:54px;
-  border-radius:50%;justify-self:center;align-self:center;margin-top:-20px;
-  align-items:center;justify-content:center;font-size:25px;padding:0;
-  box-shadow:0 6px 18px rgba(0,0,0,.4)}
+  border-radius:50%;align-items:center;justify-content:center;
+  font-size:25px;padding:0;box-shadow:0 6px 18px rgba(0,0,0,.4);
+  /* Центр кнопки стоїть рівно на верхній лінії смуги, а горизонтальна риска
+     «плюса» — у центрі кнопки. Тому риска продовжує лінію, а не висить над нею.
+     Саме заради цього «плюс» намальований, а не набраний символом: у шрифті
+     його риска сидить вище за центр рядка, і то по-різному в різних системах.
+
+     Ставимо від краю смуги, а не з потоку сітки: висота рядка залежить від
+     підписів вкладок, і кнопка з'їжджала б разом з ними. Колонки під вкладками
+     через це задані явно — інакше вони заповнюють звільнену середню. */
+  position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(-1 * var(--fab-r))}
+.tabbar .fab svg{width:22px;height:22px;stroke-width:2.4}
+.tabbar button[data-view]:nth-child(1){grid-column:1}
+.tabbar button[data-view]:nth-child(2){grid-column:2}
+.tabbar button[data-view]:nth-child(4){grid-column:4}
+.tabbar button[data-view]:nth-child(5){grid-column:5}
 .tabbar .fab.hidden{display:none}
 
 /* Screenshot mode hides all of the chrome, not just the button: otherwise the
@@ -634,7 +670,7 @@ body.shot main{padding-bottom:24px}
 body.shot .banner{bottom:0}
 /* The "+" is raised 20px above the bar, so shifting by exactly the bar height
    was not enough — a slice of the button stayed on screen. */
-body.shot.hh .tabbar{transform:translate(-50%,calc(100% + 28px))}
+body.shot.hh .tabbar{transform:translate(-50%,calc(100% + var(--fab-r) + 6px))}
 /* In screenshot mode rows do not open the form — the journal can be shown from
    the phone without touching anything by accident. */
 body.shot .dr,body.shot .u-chip,body.shot .mrow,body.shot .day-head{cursor:default}
@@ -673,6 +709,9 @@ body.shot .dr[data-edit]{cursor:pointer}
     display:flex;flex-direction:column;align-items:stretch;gap:3px;
     padding:18px 12px;background:transparent;backdrop-filter:none;
     border-top:0;border-right:1px solid var(--hairline)}
+  .tabbar::before{content:none}
+  .tabbar .fab{position:static;left:auto;top:auto;transform:none}
+  .tabbar .fab svg{width:19px;height:19px;stroke-width:2}
   .tabbar button{flex-direction:row;justify-content:flex-start;gap:11px;
     font-size:13.5px;padding:10px 12px;border-radius:10px}
   .tabbar button svg{width:19px;height:19px}

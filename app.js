@@ -14,6 +14,10 @@ const C_INS='#5AA9E6', C_FOOD='#A78BE0', HI_COLOR='#E0873C';
 const GAP_H=6;
 const CHEV=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`;          /* довша пауза — лінія рветься */
+/* «Повторити минуле»: стрілка назад по колу. */
+const REPEAT=`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M3 12a9 9 0 1 0 2.6-6.4"/><path d="M3 4v5h5"/></svg>`;
 const SHIFT_H=1;        /* зсув уколу більший за це — позначаємо */
 
 const bandOf=g=>BANDS.find(b=>g<b.max);
@@ -469,7 +473,7 @@ function renderCards(){
   const chrono=chronoNow();
   const groups=buildDays();
   if(chrono){groups.reverse();groups.forEach(g=>g.entries.reverse())}
-  let html=modeBar+`<div class="legend">
+  let html=modeBar+`<div class="legend"><b>Позначення:</b>
     <span><svg width="10" height="10"><circle cx="5" cy="5" r="4" fill="${BANDS[2].color}"/></svg> глюкоза</span>
     <span><svg width="10" height="10"><rect x="3.5" y="0" width="3" height="10" rx="1.5" fill="${C_INS}"/></svg> інсулін</span>
     <span><svg width="10" height="10"><path d="M5 1 L9 5 L5 9 L1 5 Z" fill="${C_FOOD}"/></svg> корм</span>
@@ -669,8 +673,9 @@ const SUM_HINTS={
     виміряне до наступного уколу.`,
   cards:`Кожна картка — доба від ранкового уколу до наступного ранкового.
     Розгорніть, щоб побачити заміри, дози, корм і ліки.`,
-  uday:`Мілілітри за добу, поділені на вагу і на 24 години. Остання доба ще не
-    скінчилась, тому її число завжди занижене.`,
+  uday:`Мілілітри за добу, поділені на вагу і на 24 години. Жовтим — від
+    2 мл/кг/год: цей поріг назвала лікарка. Остання доба ще не скінчилась,
+    тому її число завжди занижене.`,
   urows:`Час — це коли я побачила і поміняла лоток, а не коли кіт сходив.
     За одну зміну могло бути кілька разів, тому кількість записів не дорівнює
     кількості сечовипускань, а мілілітри приблизні.`
@@ -773,7 +778,7 @@ function periodBar(){
   return `<div class="seg-in">${seg}</div>${picker}`;
 }
 const lg=(svg,txt)=>`<span>${svg} ${txt}</span>`;
-const legendRow=items=>`<div class="legend">${items.join('')}</div>`;
+const legendRow=items=>`<div class="legend"><b>Позначення:</b>${items.join('')}</div>`;
 
 /* ---- 3. динаміка ---- */
 const LOW_FROM=3, LOW_TO=7;
@@ -1088,6 +1093,9 @@ const mlOn=date=>urine.filter(u=>u.date===date).reduce((s,u)=>s+u.ml,0);
 /* Мілілітри за добу, поділені на вагу і на 24 години. Поточна доба ще не
    скінчилась, тому її число завжди занижене — його показуємо приглушено. */
 const rateOn=date=>mlOn(date)/weight()/24;
+/* Поріг лікарки. Усе від нього й вище позначаємо тим самим жовтим, що й
+   «високо» в шкалі глюкози: на екрані це та сама думка — вище цілі. */
+const RATE_HIGH=2;
 const rate1=r=>r.toFixed(1).replace('.',',');
 
 /**
@@ -1108,7 +1116,8 @@ function urineDaysView(){
       <div class="dcell"><b>${dateShort(date)}</b></div>
       <div class="ust">${st&&st.cat?esc(st.cat):'<span class="dash">—</span>'}</div>
       <div class="uv">${ml?`<b>${ml}</b> мл`:'<span class="dash">—</span>'}</div>
-      <div class="urate"${today?' title="доба ще не скінчилась"':''}>${
+      <div class="urate${r!=null&&r>=RATE_HIGH?' hi':''}"${
+        today?' title="доба ще не скінчилась"':''}>${
         r!=null?`<b>${rate1(r)}</b>`:'<span class="dash">—</span>'}</div>
     </div>`;
   }).join('');
@@ -1372,6 +1381,17 @@ function openMed(id){
 
 const scrim=document.getElementById('scrim'),sheet=document.getElementById('sheet'),body=document.getElementById('sheetBody');
 const nowTime=()=>{const n=new Date();return String(n.getHours()).padStart(2,'0')+':'+String(n.getMinutes()).padStart(2,'0')};
+/**
+ * Поточний час, округлений униз до десятка хвилин.
+ *
+ * Замір роблять «щойно», а не о 23:47 рівно: хвилини тут все одно приблизні, і
+ * 23:40 читається легше — та й ряд часів у журналі стає охайнішим. Стоїть
+ * підказкою, а не значенням: не чіпали поле — піде округлений, вписали своє —
+ * піде ваше, з точністю до хвилини.
+ */
+const nowTime10=()=>{const n=new Date();
+  return String(n.getHours()).padStart(2,'0')+':'+
+         String(Math.floor(n.getMinutes()/10)*10).padStart(2,'0')};
 /* Одне поле з маскою: двокрапка проставляється сама після двох цифр.
    Поточний час стоїть підказкою, а не значенням — якщо не чіпати поле,
    запис піде цим часом, але й переписати його можна одним рухом. */
@@ -1399,8 +1419,9 @@ function readTime(pfx='f'){
 const close=()=>{scrim.classList.remove('open');sheet.classList.remove('open');editing=null};
 scrim.onclick=close;
 
-function shell(title,inner,del){
-  body.innerHTML=`<div class="grab"></div><h2>${title}</h2>${inner}
+function shell(title,inner,del,action){
+  body.innerHTML=`<div class="grab"></div>
+    <div class="sheet-head"><h2>${title}</h2>${action||''}</div>${inner}
     <div class="acts"><button class="btn ghost" id="cancelBtn">${del?'Видалити':'Скасувати'}</button>
     <button class="btn primary" id="saveBtn">Зберегти</button></div>`;
   const cancel=document.getElementById('cancelBtn');
@@ -1474,7 +1495,9 @@ function recentFoods(){
   const seen=[];
   [...log].filter(e=>e.food).sort((a,b)=>stamp(b).localeCompare(stamp(a)))
     .forEach(e=>{if(!seen.includes(e.food))seen.push(e.food)});
-  return seen.slice(0,4);
+  /* Двох вистачає: годують тим самим, а четвертий чіп у списку — це вже те,
+     що було позавчора. */
+  return seen.slice(0,2);
 }
 
 function medPicker(e,id){
@@ -1538,11 +1561,8 @@ function openEntry(id){
   shell(id?'Змінити запис':'Новий запис',`
     <div class="row2">
       <div class="field"><label for="f-date">Дата</label><input id="f-date" type="date" value="${e.date||TODAY}"></div>
-      <div class="field"><label for="f-time">Час</label>${timeInput(nowTime(),'f',id?(e.time||''):'')}</div>
+      <div class="field"><label for="f-time">Час</label>${timeInput(nowTime10(),'f',id?(e.time||''):'')}</div>
     </div>
-    ${id||!lastShot()?'':`<div class="field">
-      <button type="button" class="btn ghost fill" id="likeLast">Як з минулим уколом</button>
-      <div class="hint">доза, ліки й корм з останнього уколу — глюкозу не чіпає</div></div>`}
     <div class="row2">
       <div class="field"><label for="f-glu">Глюкоза</label>
         <input id="f-glu" type="text" inputmode="decimal" placeholder="9,4 або Hi" value="${e.hi?'Hi':(e.glucose!=null?fmt(e.glucose):'')}"></div>
@@ -1561,7 +1581,12 @@ function openEntry(id){
           .forEach(m=>API.remove('med',m.id));
       meds=meds.filter(m=>!(m.date===e.date&&(m.time||'')===(e.time||'')));
       API.remove('journal',id);
-      log=log.filter(x=>x.id!==id);close();renderGlucose()}:null);
+      log=log.filter(x=>x.id!==id);close();renderGlucose()}:null,
+    /* Кнопка переїхала в заголовок іконкою: заповнює форму завжди одна людина,
+       тож підпис і примітка «що бере, а що не чіпає» лише займали екран. */
+    id||!lastShot()?'':`<button type="button" class="ordbtn icon" id="likeLast"
+      title="Як з минулим уколом: доза, ліки й корм. Глюкозу не чіпає"
+      aria-label="Як з минулим уколом">${REPEAT}</button>`);
   bindTime('f');
   bindMedPicker();
   const ll=document.getElementById('likeLast');
@@ -1599,7 +1624,7 @@ function openUrine(id){
       ${id?'':`<div class="seg"><button data-m="ml" class="${uMode==='ml'?'on':''}">Сеча</button><button data-m="stool" class="${uMode==='stool'?'on':''}">Стул</button></div>`}
       ${uMode==='ml'?`<div class="row2">
         <div class="field"><label for="u-date">Дата</label><input id="u-date" type="date" value="${u.date||TODAY}"></div>
-        <div class="field"><label for="u-time">Час</label>${timeInput(nowTime(),'u',id?(u.time||''):'')}</div></div>
+        <div class="field"><label for="u-time">Час</label>${timeInput(nowTime10(),'u',id?(u.time||''):'')}</div></div>
         <div class="field"><label for="u-ml">Обʼєм, мл</label><input id="u-ml" type="text" inputmode="numeric" value="${u.ml||''}" placeholder="45"></div>`
       :`<div class="field"><label for="u-sdate">Дата</label>
           <input id="u-sdate" type="date" value="${TODAY}"></div>
