@@ -24,12 +24,12 @@
   --sage:#ADBF78;
   --sage-dim:#84925C;
   --stool:#C9A227;
-  --insulin:#5AA9E6;
+  --insulin:#67A9D9;
   --food:#A78BE0;
 
   --f-display:'Gentium Plus',serif;
   --f-body:'IBM Plex Sans',system-ui,sans-serif;
-  --head-h:56px;
+  --head-h:64px;
   --bar-h:51px;
   --jbar-h:57px;
   --stick-h:0px;        /* measured after every render, see afterRender() */
@@ -46,9 +46,29 @@ header{position:sticky;top:0;z-index:40;height:var(--head-h);
   transition:transform .22s ease;display:flex;align-items:center;
   background:rgba(24,24,24,.92);backdrop-filter:blur(16px);
   border-bottom:1px solid var(--hairline)}
-.brand{flex:1;display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 var(--pad)}
-h1{font-family:var(--f-display);font-size:18px;font-weight:500;letter-spacing:-.01em}
-h1 em{font-style:normal;color:var(--faint)}
+.brand{flex:1;display:flex;align-items:center;gap:11px;padding:0 var(--pad)}
+/* The photo is a background, not an <img>: if the file is not there the circle
+   is simply green — the same green the photo is shot on — instead of a broken
+   image icon in the header of every screen. */
+.ava{width:42px;height:42px;flex:0 0 auto;border-radius:50%;
+  background:var(--sage) url("venya.jpg") center/cover no-repeat}
+/* Inline layout, not flex: the two-line label has to sit on the same baseline
+   as the name, and an inline-block takes the baseline of its LAST line — which
+   is exactly the alignment wanted. Flex could only centre the block or align it
+   by its first line, and both float the label off the name's baseline. */
+h1{font-family:var(--f-display);font-size:26px;font-weight:500;
+  letter-spacing:-.01em;line-height:1;white-space:nowrap}
+/* The slash is set in the body face and oversized: in the serif it read as a
+   letter of the name rather than a divider. */
+h1 .slash{font-family:var(--f-body);font-style:normal;font-weight:300;
+  font-size:33px;line-height:1;color:var(--faint);opacity:.5;
+  display:inline-block;vertical-align:baseline;margin:0 5px 0 8px}
+/* Own size and leading, tied to nothing else: it is the only two-line caps
+   label in the app, and every other 9px thing here is a single line. */
+h1 em{display:inline-block;vertical-align:baseline;white-space:normal;
+  font-family:var(--f-body);font-style:normal;font-size:8.5px;font-weight:500;
+  letter-spacing:.11em;text-transform:uppercase;color:var(--muted);line-height:1.2}
+.now{margin-left:auto}
 .now{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
 .now b{color:var(--text);font-weight:600}
 .tabs{display:flex;gap:20px;margin-top:16px;padding:0 var(--pad);overflow-x:auto;scrollbar-width:none}
