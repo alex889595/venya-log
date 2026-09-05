@@ -1,25 +1,34 @@
 :root{
-  --bg:#17181A;
-  --card:#212227;
-  --card-day:#26272C;
-  --card-night:#161719;
-  --panel:#1E1F22;
-  --hairline:#2E3036;
-  --text:#E8EAEC;
-  --muted:#9A9EA6;
-  --faint:#6B7078;
+/* Flat neutral greys: R = G = B, no cast either way.
+   A warm grey was the obvious answer next to a warm green, and it was the wrong
+   one — the surfaces and the accent then share a hue, and a yellow-green loses
+   its separation from a yellowish surface. Neutral costs nothing and lets the
+   green be the only warm thing on screen. Lightness matches the blue-tinted
+   greys these replace, channel for channel at equal luminance. */
+  --bg:#181818;
+  --card:#222222;
+  --card-day:#272727;
+  --card-night:#171717;
+  --panel:#1F1F1F;
+  --hairline:#303030;
+  --text:#E9E9E9;
+  --muted:#9D9D9D;
+  --faint:#6F6F6F;
 
-  --form:#1E2119;
-  --form-field:#171A13;
+  --form:#1F2118;
+  --form-field:#181A12;
 
-  --sage:#A3C585;
-  --sage-dim:#7C9A62;
+  /* Warmer, more yellow green: same saturation and lightness relationship
+     between the two, hue moved from 92 to 75 degrees. --sage-dim keeps the
+     ratios the pair had before, so the accents stay a family. */
+  --sage:#ADBF78;
+  --sage-dim:#84925C;
   --stool:#C9A227;
   --insulin:#5AA9E6;
   --food:#A78BE0;
 
   --f-display:'Gentium Plus',serif;
-  --f-body:'Roboto',system-ui,sans-serif;
+  --f-body:'IBM Plex Sans',system-ui,sans-serif;
   --head-h:56px;
   --bar-h:51px;
   --jbar-h:57px;
@@ -28,14 +37,14 @@
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
-body{background:#0F1011;color:var(--text);font-family:var(--f-body);
+body{background:#101010;color:var(--text);font-family:var(--f-body);
   -webkit-font-smoothing:antialiased;display:flex;justify-content:center}
 .app{width:100%;max-width:480px;background:var(--bg);min-height:100vh;
   border-left:1px solid var(--hairline);border-right:1px solid var(--hairline)}
 
 header{position:sticky;top:0;z-index:40;height:var(--head-h);
   transition:transform .22s ease;display:flex;align-items:center;
-  background:rgba(23,24,26,.92);backdrop-filter:blur(16px);
+  background:rgba(24,24,24,.92);backdrop-filter:blur(16px);
   border-bottom:1px solid var(--hairline)}
 .brand{flex:1;display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:0 var(--pad)}
 h1{font-family:var(--f-display);font-size:18px;font-weight:500;letter-spacing:-.01em}
@@ -126,13 +135,13 @@ main{padding:0 0 76px}
 .chip.dose{border-color:color-mix(in srgb,var(--insulin) 50%,transparent);color:var(--insulin)}
 .chip.food{border-color:color-mix(in srgb,var(--food) 45%,transparent);color:var(--food)}
 .chip.skip{color:var(--faint)}
-.note{margin:12px 0 0 52px;font-size:13.5px;line-height:1.55;color:#C4C8CE}
+.note{margin:12px 0 0 52px;font-size:13.5px;line-height:1.55;color:#C6C6C6}
 .note.clamped{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .vetnote{margin:12px 0 0 52px;border-left:2px solid var(--sage-dim);
   padding:10px 14px;border-radius:0 12px 12px 0;background:var(--panel)}
 .vetnote .who{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
   color:var(--sage-dim);display:block;margin-bottom:6px}
-.vetnote p{font-size:13.5px;line-height:1.55;color:#C4C8CE}
+.vetnote p{font-size:13.5px;line-height:1.55;color:#C6C6C6}
 
 /* ---------- summary: day card, morning and evening inside ---------- */
 .sum-note{padding:14px var(--pad) 16px;font-size:12.5px;color:var(--muted);line-height:1.6}
@@ -439,7 +448,7 @@ body.hh .dr.dh{top:0}
 .acts{display:flex;gap:10px;margin-top:22px}
 .btn{flex:1;padding:15px;border-radius:14px;border:0;cursor:pointer;
   font-family:inherit;font-size:14.5px;font-weight:600}
-.btn.primary{background:var(--sage);color:#171A11}
+.btn.primary{background:var(--sage);color:#181A10}
 .btn.fill{width:100%}
 .btn.ghost{background:none;border:1px solid var(--hairline);color:var(--muted);flex:0 0 34%}
 .btn.arm{background:#B3252F;border-color:#B3252F;color:#fff;flex:0 0 52%}
@@ -580,16 +589,16 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
 .tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;z-index:60;
   width:100%;max-width:480px;display:grid;
   grid-template-columns:1fr 1fr 68px 1fr 1fr;align-items:end;
-  background:rgba(23,24,26,.96);backdrop-filter:blur(16px);
+  background:rgba(24,24,24,.96);backdrop-filter:blur(16px);
   border-top:1px solid var(--hairline);transition:transform .22s ease;
   padding:7px 0 calc(7px + env(safe-area-inset-bottom))}
 .tabbar button{background:none;border:0;cursor:pointer;font-family:inherit;
   display:flex;flex-direction:column;align-items:center;gap:3px;
-  font-size:9.5px;color:var(--faint);padding:4px 2px;line-height:1.2}
+  font-size:11px;color:var(--faint);padding:4px 2px;line-height:1.25}
 .tabbar button svg{width:20px;height:20px;display:block;fill:none;
   stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .tabbar button[aria-selected="true"]{color:var(--sage)}
-.tabbar .fab{background:var(--sage);color:#171A11;width:54px;height:54px;
+.tabbar .fab{background:var(--sage);color:#181A10;width:54px;height:54px;
   border-radius:50%;justify-self:center;align-self:center;margin-top:-20px;
   align-items:center;justify-content:center;font-size:25px;padding:0;
   box-shadow:0 6px 18px rgba(0,0,0,.4)}
@@ -612,7 +621,7 @@ body.shot .dr,body.shot .u-chip,body.shot .mrow,body.shot .day-head{cursor:defau
 /* Range selection: the same gesture as selecting cells in a spreadsheet before
    a screenshot — show the vet exactly the rows that were not sent yet. */
 body.shot .dr[data-edit]{cursor:pointer}
-.dr.sel{background:rgba(163,197,133,.07)}
+.dr.sel{background:rgba(173,191,120,.07)}
 .dr.sel-a{box-shadow:inset 0 1px 0 var(--sage)}
 .dr.sel-b{box-shadow:inset 0 -1px 0 var(--sage)}
 .dr.sel-a.sel-b{box-shadow:inset 0 1px 0 var(--sage),inset 0 -1px 0 var(--sage)}
@@ -646,8 +655,8 @@ body.shot .dr[data-edit]{cursor:pointer}
     border-top:0;border-right:1px solid var(--hairline)}
   .tabbar button{flex-direction:row;justify-content:flex-start;gap:11px;
     font-size:13.5px;padding:10px 12px;border-radius:10px}
-  .tabbar button svg{width:18px;height:18px}
-  .tabbar button[aria-selected="true"]{background:rgba(163,197,133,.12)}
+  .tabbar button svg{width:19px;height:19px}
+  .tabbar button[aria-selected="true"]{background:rgba(173,191,120,.12)}
   .tabbar .fab{order:-1;width:auto;height:auto;margin:0 0 14px;
     border-radius:10px;padding:11px 12px;font-size:16px;
     justify-content:flex-start;box-shadow:none}

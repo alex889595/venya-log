@@ -6,7 +6,7 @@ console.log('venya build v'+BUILD);
 const BANDS=[
   {max:3,  color:'#B3252F', name:'дуже низько'},
   {max:5,  color:'#E0504F', name:'низько'},
-  {max:15, color:'#A3C585', name:'ціль'},
+  {max:15, color:'#ADBF78', name:'ціль'},
   {max:20, color:'#E8C05A', name:'високо'},
   {max:1e9,color:'#E0873C', name:'дуже високо'}
 ];
@@ -542,7 +542,7 @@ function renderCards(){
       <button class="day-head"><div class="day-top">
         <span class="day-name">${dayName(g.date)}</span>
         <span class="day-range">${nums.length?`<i>мін–макс</i> ${fmt(Math.min(...nums))} – ${fmt(Math.max(...nums))}`:''}<span class="chev" aria-hidden="true">${CHEV}</span></span>
-      </div>${g.anchor?`<div class="day-line2">від уколу ${g.anchor.time}${shiftLbl}</div>`:''}${sparkline(g)}<div class="day-meta">
+      </div>${g.anchor?`<div class="day-line2">цикл від ${g.anchor.time}${shiftLbl}</div>`:''}${sparkline(g)}<div class="day-meta">
         <span class="meta">${g.entries.filter(e=>e.glucose!=null||e.hi).length} замірів</span>
         ${doses.length?`<span class="meta dose">дози ${doses.join(' · ')}</span>`:'<span class="meta">без інсуліну</span>'}
         ${uml?`<span class="meta">сеча ${uml} мл</span>`:''}
@@ -589,7 +589,7 @@ function renderCards(){
     <div class="big" style="color:${colorFor(top)||'var(--muted)'}">${top.hi?'Hi':top.glucose!=null?fmt(top.glucose):'—'}<span>ммоль/л · ${top.time}</span></div>
     <div class="sub">${top.hi?'поза шкалою':top.glucose!=null?bandOf(top.glucose).name:''}</div><hr>
     <h3>Поточна доба</h3><div class="sub">
-      ${g0.anchor?`від уколу ${g0.anchor.time}<br>`:''}
+      ${g0.anchor?`цикл від ${g0.anchor.time}<br>`:''}
       мін ${fmt(Math.min(...n0))} · макс ${fmt(Math.max(...n0))}<br>
       ${g0.entries.filter(e=>e.glucose!=null||e.hi).length} замірів</div>`;
   afterRender();

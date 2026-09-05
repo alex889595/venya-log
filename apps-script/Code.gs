@@ -70,7 +70,7 @@ var STOOL = ['не какав','сухий','нормальний',"м'який"
 var BANDS = [
   {lt: 3,  color: '#B3252F', name: 'дуже низько'},
   {lt: 5,  color: '#E0504F', name: 'низько'},
-  {lt: 15, color: '#A3C585', name: 'ціль'},
+  {lt: 15, color: '#ADBF78', name: 'ціль'},
   {lt: 20, color: '#E8C05A', name: 'високо'}
 ];
 var BAND_HIGH = {color: '#E0873C', name: 'дуже високо'};
@@ -79,7 +79,7 @@ var FONT = 'Roboto';
 var FONT_SIZE = 10;
 var DOT_SIZE = 12;
 
-var TAB_WORK    = '#A3C585';
+var TAB_WORK    = '#ADBF78';
 var TAB_TALK    = '#5AA9E6';
 var TAB_ARCHIVE = '#9A9EA6';
 
@@ -121,7 +121,7 @@ var CACHE_SEC = 300;
  * being served, and the app behaved exactly as it had before the fix. That is
  * the worst possible way to lose faith in a fix: it looks like it did not work.
  */
-var CODE_VERSION = 4;
+var CODE_VERSION = 5;
 
 /**
  * Weight used to turn millilitres per day into ml/kg/h.
@@ -133,11 +133,19 @@ var CODE_VERSION = 4;
  * in a formula — one value, changed in two taps from the app, the same on every
  * device and for the vet.
  */
-var WEIGHT_PROP = 'WEIGHT', WEIGHT_DEFAULT = 5;
+var WEIGHT_PROP = 'WEIGHT';
 
+/**
+ * Zero means "never set here", not "five kilograms".
+ *
+ * The difference matters on a fresh deployment — the production copy, say:
+ * answering with a default would quietly hand everyone a made-up weight and a
+ * wrong ml/kg/h with it. Zero lets the app fall back to whatever it has locally
+ * and say nothing until a real number is entered once.
+ */
 function weight_() {
   var v = parseFloat(PropertiesService.getScriptProperties().getProperty(WEIGHT_PROP));
-  return (v > 0 && v < 30) ? v : WEIGHT_DEFAULT;
+  return (v > 0 && v < 30) ? v : 0;
 }
 
 function setWeight_(v) {
