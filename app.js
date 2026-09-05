@@ -34,6 +34,9 @@ let log=[], regimens=[], meds=[], urine=[], stool=[], days=[];
 /* Адресу таблиці віддає API, а не config.js: у публічному репозиторії їй не
    місце, бо таблиця відкрита на редагування за посиланням. */
 let sheetUrl='', notionUrl='';
+/* Вага з відповіді скрипта. Нуль означає «скрипт її ще не віддає» — тоді
+   беремо копію з пристрою. */
+let serverWeight=0;
 /* Початок завантаженого вікна: за ним видно, чи вистачає даних на обраний
    період, чи треба спершу довантажити. */
 let loadedFrom='';
@@ -156,21 +159,14 @@ function sparkline(g,o={}){
   return `<svg class="${o.cls||'spark'}" viewBox="0 0 ${W} ${H}">${s}</svg>`;
 }
 
-/* Щільний режим: те саме, що в таблиці, і рівно з тією ж густиною.
-   Картки корисні, коли розбираєшся з одним днем; коли треба охопити тиждень
-   очима, вони програють звичайним рядкам, і сперечатись тут нема з чим. */
-let dense=true;
-/* Порядок окремий для кожного режиму. Таблиця хронологічна, як у Таблицях
-   і месенджерах. Картки — свіже зверху: розгорнута картка довга, і читати
-   сусідній день, гортаючи назад крізь неї, незручно. */
-let orderBy={dense:true,cards:false};
-const chronoNow=()=>orderBy[dense?'dense':'cards'];
+/* Порядок один на всі списки: журнал, «По добах», картки і «Сеча і стул».
+   Дві таблиці про ті самі доби не мають читатись у різні боки. Типово
+   хронологічний, як у Таблицях і в месенджерах. */
+let chronoOrder=true;
+const chronoNow=()=>chronoOrder;
+/* Просимо поставити сторінку на найсвіжіші записи при наступному малюванні.
+   Живе прапорцем, а не викликом, бо малювання буває відкладеним. */
 let needScroll=true;
-const scrollMemo={};
-/* На завантаженні тягне до найсвіжіших, як у листуванні. Малювань при старті
-   два — з кешу і зі свіжих даних, — і без цього прапорця друге відновлювало б
-   збережену позицію і затирало стрибок. */
-let pinNewest=false;
 
 /**
  * Режим перегляду: з екрана йде весь хром — бар, плашка, липкість шапки — і
@@ -197,12 +193,26 @@ let allLoaded=false;
 let loadingMore=false;
 
 /**
- * Чи лишилось що вантажити. Якщо найстаріший рядок новіший за початок
- * запитаного вікна — вікно вже ширше за самі дані, і глибше нічого немає.
- * Рахувати «чи прибавилось рядків» не годиться: тоді кнопка живе на один зайвий
- * клік, бо дізнатись про це можна лише з наступної відповіді.
+ * Чи лишилось що вантажити.
+ *
+ * Скрипт віддає найранішу дату кожного аркуша (`first`), і тоді це просте
+ * порівняння: вікно або дотягується до неї, або ні. Раніше застосунок
+ * здогадувався сам — «найстаріший рядок стоїть рівно на краю вікна, отже, за
+ * ним щось є», — і не міг відрізнити «є ще» від «дані просто там починаються».
+ * Через це кнопка лишалась висіти після того, як вантажити вже не було чого.
  */
+const EDGES=['journal','urine','day','med'];
+let firstDates=null;
 function markAllLoaded(payload){
+  firstDates=payload.first||null;
+  if(firstDates){
+    /* Вікно вже дотягується до найранішої дати кожного аркуша — далі нічого. */
+    allLoaded=EDGES.every(k=>!firstDates[k]||payload.from<=firstDates[k]);
+    return;
+  }
+  /* Старий скрипт не каже, де починаються дані, тому доводиться здогадуватись
+     по краю вікна. Здогадка коштує зайвого натискання, але не замикає: якщо
+     найстаріший рядок новіший за початок запитаного, глибше нічого немає. */
   const dates=[];
   (payload.journal||[]).forEach(r=>{if(r.date)dates.push(r.date)});
   (payload.urine||[]).forEach(r=>{if(r.date)dates.push(r.date)});
@@ -243,7 +253,7 @@ function orderBar(){
 }
 function bindOrder(){
   document.querySelectorAll('[data-jo]').forEach(b=>
-    b.onclick=()=>{orderBy[dense?'dense':'cards']=b.dataset.jo==='1';
+    b.onclick=()=>{chronoOrder=b.dataset.jo==='1';
       needScroll=true;setView(view)});
   document.querySelectorAll('[data-shot]').forEach(b=>
     b.onclick=()=>{shotMode=!shotMode;if(!shotMode)selA=selB=null;
@@ -275,12 +285,44 @@ function pickRow(id){
   paintSelection();
 }
 
-function afterJournal(){
-  const go=needScroll&&chronoNow();
+/**
+ * Розділ, який читається за порядком сортування: журнал, «Сеча і стул» і
+ * списки у «Зведенні». Графіки сюди не входять — у них вісь задає себе сама.
+ */
+const isList=()=>view==='glucose'||view==='urine'||
+  (view==='cycles'&&(sumMode==='rows'||sumMode==='cards'));
+
+/**
+ * Позиція до заміни розмітки. Знімати її треба саме тут: `innerHTML` на мить
+ * робить документ коротким, браузер підтягує прокрутку до нуля — і будь-яке
+ * перемалювання (свіжі дані, довантаження, збережений запис) викидало на
+ * найстаріші записи. Тримаємо і відступ від низу: у хронологічному порядку
+ * старіші рядки додаються згори, і «та сама позиція» — це та сама відстань до
+ * кінця, а не до початку.
+ */
+let keepY=0, keepBottom=0;
+function beginRender(){
+  keepY=window.scrollY;
+  keepBottom=document.documentElement.scrollHeight-window.scrollY;
+}
+
+/**
+ * Після малювання ставимо сторінку туди, де найсвіжіші записи: унизу при
+ * хронологічному порядку, угорі при зворотному. Так буває при заході в розділ,
+ * зміні подання і зміні сортування. Решта перемалювань лишає людину на місці.
+ */
+function afterRender(){
+  const go=needScroll, y=keepY, fromEnd=keepBottom;
   needScroll=false;
   requestAnimationFrame(()=>{
-    if(go)window.scrollTo({top:document.body.scrollHeight});
+    const H=document.documentElement.scrollHeight;
+    if(go)window.scrollTo({top:isList()&&chronoNow()?H:0});
+    else window.scrollTo({top:isList()&&chronoNow()?Math.max(0,H-fromEnd):y});
     if(window.rebaseHeader)window.rebaseHeader();
+    /* Заголовки таблиць липнуть під смугою, а її висота залежить від того,
+       що в ній стоїть. Тому міряємо, а не вписуємо число. */
+    const st=document.querySelector('.stick');
+    document.body.style.setProperty('--stick-h',(st?st.offsetHeight:0)+'px');
     updateJump();
   });
 }
@@ -293,10 +335,7 @@ function jumpTarget(){
 }
 function updateJump(){
   if(!jumpBtn)return;
-  /* Язичок потрібен усюди, де список довгий: журнал і списки у «Зведенні». */
-  const listView = view==='glucose' ||
-    (view==='cycles'&&(sumMode==='rows'||sumMode==='cards'));
-  if(!listView||shotMode){jumpBtn.hidden=true;return}
+  if(!isList()||shotMode){jumpBtn.hidden=true;return}
   const vh=window.innerHeight, y=window.scrollY;
   const far=chronoNow()
     ? (document.documentElement.scrollHeight-(y+vh))>vh*0.8
@@ -347,8 +386,15 @@ function denseRows(){
  * починається 10.08, і коли вікно вже тягнеться з 02.08, старіших записів
  * лотка не існує — кнопка там зайва, хоча в журналі вона ще потрібна.
  */
+const EDGE_OF={journal:['journal'],urine:['urine','day'],meds:['med']};
+
 function hasMore(kind){
-  if(allLoaded||!loadedFrom)return !allLoaded;
+  if(!loadedFrom)return !allLoaded;
+  if(firstDates){
+    return (EDGE_OF[kind]||EDGE_OF.journal)
+      .some(k=>firstDates[k]&&loadedFrom>firstDates[k]);
+  }
+  if(allLoaded)return false;
   const arr=kind==='urine'?urine:kind==='meds'?meds:log;
   if(!arr.length)return false;
   return arr.map(x=>x.date).sort()[0]<=loadedFrom;
@@ -377,7 +423,11 @@ function bindMore(){
       /* Нові рядки лягають на дальній кінець списку — звідти, де ти стоїш, їх
          не видно. Без цього рядка здається, що кнопка не спрацювала. */
       const add=log.length+urine.length+meds.length-had;
+      /* Порожній крок і кінець даних — різні речі. Поки скрипт не казав, де
+         починаються записи, розрізнити їх було нічим, і після паузи в записах
+         застосунок обіцяв, що старіших немає, хоча вони були. */
       say(add?`Завантажено ще ${add} ${plural(add,'запис','записи','записів')}`
+             :hasMore('journal')?'У цьому проміжку записів немає, гортайте далі'
              :'Старіших записів більше немає','wait');
       setTimeout(()=>say(API.pending()?'Не відправлено записів: '+API.pending():''),4000);
     }catch(err){
@@ -389,6 +439,7 @@ function bindMore(){
 }
 
 function renderGlucose(){
+  beginRender();
   const more=moreBar('journal');
   document.getElementById('main').innerHTML=orderBar()+
     (chronoNow()?more:'')+denseRows()+(chronoNow()?'':more);
@@ -397,7 +448,7 @@ function renderGlucose(){
   document.querySelectorAll('.dr[data-edit]').forEach(r=>
     r.onclick=()=>{ shotMode?pickRow(r.dataset.edit):openEntry(r.dataset.edit) });
   paintSelection();
-  afterJournal();
+  afterRender();
 }
 
 /**
@@ -406,12 +457,13 @@ function renderGlucose(){
  * більше не треба перемикача подань.
  */
 function renderCards(){
+  beginRender();
   const modeBar=sumBar();
   if(!log.length){
     document.getElementById('main').innerHTML=modeBar+
       '<div class="empty">Записів ще немає.</div>';
     document.getElementById('side').innerHTML='';
-    bindSum();bindHint();
+    bindSum();bindHint();afterRender();
     return;
   }
   const chrono=chronoNow();
@@ -540,7 +592,7 @@ function renderCards(){
       ${g0.anchor?`від уколу ${g0.anchor.time}<br>`:''}
       мін ${fmt(Math.min(...n0))} · макс ${fmt(Math.max(...n0))}<br>
       ${g0.entries.filter(e=>e.glucose!=null||e.hi).length} замірів</div>`;
-  afterJournal();
+  afterRender();
 }
 
 /* ================= ЗВЕДЕННЯ ================= */
@@ -594,10 +646,11 @@ function cellA(c){
   const dose=c.dose===0
     ?'<span class="dose-dot skip"><i></i></span>'
     :`<span class="dose-dot"><i></i>${fmt(c.dose)}</span>`;
-  /* Стрілка вниз замість слів: нижній рядок — це мінімум після уколу, і це
-     має читатись без пояснення під таблицею. */
+  /* Показник іде першим і в верхньому рядку, і в нижньому: так дві цифри
+     стоять точно одна під одною і колонка читається згори вниз. Стрілка чи
+     слово «через» попереду зсували нижнє число вправо — і ряд починав скакати. */
   const row2=c.nadir
-    ?`<span class="t2">↓</span><span class="v2" style="color:${colorFor(c.nadir)}">${fmt(c.nadir.glucose)}</span><span class="t2">через ${Math.round(c.lag)} год</span>`
+    ?`<span class="v2" style="color:${colorFor(c.nadir)}">${fmt(c.nadir.glucose)}</span><span class="t2">(+${Math.round(c.lag)} год)</span>`
     :c.closed?'<span class="dash">без замірів</span>':'<span class="dash">триває</span>';
   return `<div class="cell2${c.slot==='pm'?' pm':''}">
     <div class="cell2-row1"><span class="v1" style="color:${colorFor(pre)||'var(--muted)'}">${preV}</span>
@@ -605,36 +658,48 @@ function cellA(c){
     <div class="cell2-row2">${row2}</div></div>`;
 }
 /**
- * Пояснення до подання потрібне рівно один раз — при першій зустрічі з ним.
- * Постійна кнопка (i) під таке не годиться: вона висить вічно заради тексту,
- * який більше ніколи не знадобиться. Тому це разова картка, прив'язана до
- * екрана (а не до місця в списку, який відкривається внизу), з кнопкою
- * «Зрозуміло». Після неї не повертається.
+ * Пояснення до подання лежить під кнопкою (i) і показується лише на вимогу.
+ * Само воно не вилазить: текст тут очевидний більшість днів, а віконце, яке
+ * з'являється саме, доводиться закривати — тобто заважає рівно тим, хто вже
+ * все зрозумів. Стан не запам'ятовується: наступного разу знову згорнуто.
  */
 const SUM_HINTS={
   rows:`Кожен рядок — доба, дві колонки — ранковий і вечірній цикл.
     У клітинці зверху показник на момент уколу і доза, знизу — найнижче
     виміряне до наступного уколу.`,
   cards:`Кожна картка — доба від ранкового уколу до наступного ранкового.
-    Розгорніть, щоб побачити заміри, дози, корм і ліки.`
+    Розгорніть, щоб побачити заміри, дози, корм і ліки.`,
+  uday:`Мілілітри за добу, поділені на вагу і на 24 години. Остання доба ще не
+    скінчилась, тому її число завжди занижене.`,
+  urows:`Час — це коли я побачила і поміняла лоток, а не коли кіт сходив.
+    За одну зміну могло бути кілька разів, тому кількість записів не дорівнює
+    кількості сечовипускань, а мілілітри приблизні.`
 };
-const hintSeen=k=>localStorage.getItem('venya.hint.'+k)==='1';
-const markHintSeen=k=>localStorage.setItem('venya.hint.'+k,'1');
+let hintOpen=null;
 
-function hintCard(){
-  const t=SUM_HINTS[sumMode];
-  if(!t||hintSeen(sumMode))return '';
-  return `<div class="coach" id="coach">
-    <div class="coach-text">${t}</div>
-    <button class="btn primary" data-coach="1">Зрозуміло</button></div>`;
+/* Сама іконка не каже, що під нею. Кружечок лишається, але поруч стоїть слово:
+   тапати в невідоме заради невідомого ніхто не буде. */
+function hintBtn(key){
+  if(!SUM_HINTS[key])return '';
+  return `<button class="ordbtn ibtn${hintOpen===key?' on':''}" data-hint="${key}"
+    aria-label="Що тут показано"><i>i</i>що це</button>`;
 }
-function bindHint(){
-  const b=document.querySelector('[data-coach]');
-  if(b)b.onclick=()=>{
-    markHintSeen(sumMode);
-    const c=document.getElementById('coach');
-    if(c)c.remove();
-  };
+
+/**
+ * Панель відкривається всередині липкої смуги, а не десь у змісті: кнопка
+ * стоїть тут, і відповідь має з'явитись тут же. Раніше текст лягав угору
+ * сторінки, і з середини списку його просто не було видно — тапаєш і нічого
+ * не відбувається.
+ */
+function hintCard(key){
+  const t=SUM_HINTS[key];
+  if(!t||hintOpen!==key)return '';
+  return `<div class="coach">${t}</div>`;
+}
+function bindHint(redraw){
+  document.querySelectorAll('[data-hint]').forEach(b=>
+    b.onclick=()=>{const k=b.dataset.hint;
+      hintOpen=hintOpen===k?null:k;(redraw||renderCycles)()});
 }
 
 function rowsView(){
@@ -644,9 +709,9 @@ function rowsView(){
   const rows=list.map(r=>`<div class="trow">
     <div class="dcell"><b>${dateShort(r.date)}</b></div>
     ${cellA(r.am)}${cellA(r.pm)}</div>`).join('');
-  return `<div class="tbl">
-      <div class="trow hd"><div>Доба</div><div>Ранок</div><div>Вечір</div></div>
-      ${rows}</div>`;
+  return `<div class="thead"><div class="trow hd"><div>Доба</div><div>Ранок</div>
+      <div>Вечір</div></div></div>
+    <div class="tbl">${rows}</div>`;
 }
 
 /* ---- 3. тренд передукольних ----
@@ -714,15 +779,33 @@ const legendRow=items=>`<div class="legend">${items.join('')}</div>`;
 const LOW_FROM=3, LOW_TO=7;
 let lowWindow=true;
 
+/**
+ * Ширина полотна в тих самих пікселях, у яких воно буде на екрані.
+ * Раніше viewBox був фіксовані 600 одиниць, а svg розтягувався на ширину
+ * контейнера — на телефоні це стиснення вдвічі, і разом з геометрією вдвічі
+ * стискались підписи: 9.5 кегля перетворювались на 5. Тому полотно міряємо,
+ * а не вигадуємо: одна одиниця viewBox = один піксель, і кегль означає кегль.
+ */
+function chartW(){
+  const m=document.getElementById('main');
+  const pad=parseFloat(getComputedStyle(document.body).getPropertyValue('--pad'))||14;
+  /* поля .chart-box: pad ліворуч і праворуч, 16 внутрішніх і рамка */
+  return Math.max(280,Math.round((m?m.clientWidth:360)-2*pad-34));
+}
+
+/* Підпис дати займає приблизно стільки; рідше — краще, ніж злиплий ряд. */
+const DATE_PX=40;
+/* Крок підписів вибираємо з «людських» значень: 5 днів або 9 днів між
+   позначками читаються гірше, ніж тиждень, навіть якщо влізають. */
+const STRIDES=[1,2,3,7,14,30];
+const strideFor=perDay=>STRIDES.find(s=>s*perDay>=DATE_PX+6)||STRIDES[STRIDES.length-1];
+
 function trendChart(pts,opt){
-  const W=600,H=opt.H||250,pl=30,pr=10,pt=12,dose=40,dates=16,mY=30;
+  const W=opt.W||chartW(),H=opt.H||250,pl=30,pr=24,pt=12,dose=40,dates=18,mY=30;
   const pb=dose+dates;
   const X=i=>pl+(pts.length<2?0.5*(W-pl-pr):i/(pts.length-1)*(W-pl-pr));
   const Y=v=>H-pb-(Math.min(v,mY)/mY)*(H-pb-pt);
   const base=H-dates-4, maxDose=Math.max(0.75,...pts.map(p=>p.dose||0));
-  /* на підпис треба ~34 px, інакше вони наїжджають один на одного */
-  const labelled=pts.filter(p=>p.label).length||1;
-  const labelEvery=Math.max(1,Math.ceil(labelled/Math.floor((W-pl-pr)/34)));
   const bw=Math.max(5,Math.min(16,(W-pl-pr)/Math.max(pts.length,1)*0.4));
   let g=`<rect x="${pl}" y="${Y(15)}" width="${W-pl-pr}" height="${Y(5)-Y(15)}"
     fill="${BANDS[2].color}" opacity=".08"/>`;
@@ -735,6 +818,11 @@ function trendChart(pts,opt){
     g+=`<line x1="${X(i-1)}" y1="${Y(pts[i-1].v)}" x2="${X(i)}" y2="${Y(pts[i].v)}"
       stroke="${pts[i].col}" stroke-width="2" opacity=".85" stroke-linecap="round"/>`;
   }
+  /* Підписи ставимо жадібно: наступна дата малюється, лише якщо від
+     попередньої лишилось місце. Рахувати «кожну N-ту» тут не можна — точки
+     стоять за індексом, а не за часом, і варто десь бракувати вечірнього
+     уколу, як дві сусідні дати опиняються впритул і наїжджають одна на одну. */
+  let lastLx=-1e9;
   pts.forEach((p,i)=>{
     const x=X(i);
     if(p.v!=null){
@@ -752,11 +840,11 @@ function trendChart(pts,opt){
       g+=`<rect x="${x-bw/2}" y="${base-h}" width="${bw}" height="${h}" rx="2"
         fill="${C_INS}" opacity="${p.slot==='am'?.95:.55}"><title>${fmt(p.dose)} ОД</title></rect>`;
     }
-    /* Підписи ставимо через один-два, залежно від того, скільки їх влізе:
-       злиплий ряд дат не читається взагалі, а кожна друга — цілком. */
-    if(p.label&&i%labelEvery===0)
-      g+=`<text x="${x}" y="${H-3}" text-anchor="middle" font-size="9.5"
+    if(p.label&&x-lastLx>=DATE_PX){
+      lastLx=x;
+      g+=`<text x="${x}" y="${H-4}" text-anchor="middle" font-size="11"
         fill="var(--faint)">${p.label}</text>`;
+    }
   });
   g+=`<line x1="${pl}" y1="${base}" x2="${W-pr}" y2="${base}"
     stroke="var(--hairline)" stroke-width="1"/>`;
@@ -834,14 +922,17 @@ function periodView(){
     g+=`<line x1="${pl}" y1="${Y(v)}" x2="${W-pr}" y2="${Y(v)}" stroke="var(--hairline)"
       stroke-width="1" opacity=".55"/>
       <text x="${pl-6}" y="${Y(v)+4}" text-anchor="end" font-size="10.5" fill="var(--faint)">${v}</text>`;});
-  let di=0; const labelEvery=agg?7:1;
+  /* Крок підписів рахуємо від ширини доби, а не від того, стиснений період чи
+     ні: інакше на піврічному вікні, де доба займає п'ять пікселів, тижневі
+     позначки злипаються в суцільну смугу. */
+  let di=0; const labelEvery=strideFor(W/Math.max(nDays,1));
   for(let d=new Date(t0);d<=t1;d.setDate(d.getDate()+1),di++){
     const x=X(d), show=di%labelEvery===0;
     if(show||!agg)
       g+=`<line x1="${x}" y1="${pt}" x2="${x}" y2="${H-pb}" stroke="var(--hairline)" stroke-width="1"/>`;
     if(show)
-      g+=`<text x="${x+5}" y="${H-12}" font-size="10" fill="var(--faint)">${
-        d.getDate()+'.'+String(d.getMonth()+1).padStart(2,'0')}</text>`;
+      g+=`<text x="${x+5}" y="${H-12}" font-size="11" fill="var(--faint)">${
+        isoOf(d).slice(8)+'.'+isoOf(d).slice(5,7)}</text>`;
   }
 
   if(agg){
@@ -910,23 +1001,29 @@ function periodView(){
     </section>`;
 }
 
-/* Смуга подань «Зведення» — спільна для карток і решти подань. */
+/**
+ * Смуга подань «Зведення» — спільна для карток і решти подань.
+ * Липка разом з керуванням: перемикач подань потрібен посеред списку не рідше,
+ * ніж на його початку, а гортати заради нього до самого верху — та ще розвага.
+ */
 function sumBar(){
   const modes=[['cards','Картками'],['rows','По добах'],
                ['trend','Динаміка'],['period','Крива']];
   const seg=`<div class="seg-top">${modes.map(([k,l])=>
     `<button data-m="${k}" class="${sumMode===k?'on':''}">${l}</button>`).join('')}</div>`;
   /* Порядок стосується лише списків; у графіках вісь задає сама себе. */
-  return seg + (sumMode==='rows'||sumMode==='cards'
-    ? `<div class="jbar">${orderBtn()}</div>` : '') + hintCard();
+  const ctrl=(sumMode==='rows'||sumMode==='cards')
+    ? `<div class="jrow">${orderBtn()}${hintBtn(sumMode)}</div>` : '';
+  return `<div class="stick">${seg}${ctrl}${hintCard(sumMode)}</div>`;
 }
 function bindSum(){
   document.querySelectorAll('.seg-top [data-m]').forEach(b=>
-    b.onclick=()=>{sumMode=b.dataset.m;renderCycles()});
+    b.onclick=()=>{sumMode=b.dataset.m;needScroll=true;renderCycles()});
 }
 
 function renderCycles(){
   if(sumMode==='cards')return renderCards();
+  beginRender();
   /* «Години» прибрано: на телефоні сітка годин не читається, а обробка зсувів
      уколів у ній сумнівна. Код лишився в історії — див. docs/navigation.md. */
   const modes=[['cards','Картками'],['rows','По добах'],
@@ -944,9 +1041,8 @@ function renderCycles(){
   document.getElementById('main').innerHTML=sumBar()
     +(chrono?more:'')+views[sumMode]()+(chrono?'':more);
   bindSum();bindHint();
-  if(sumMode==='rows'){bindOrder();bindMore();afterJournal();}
-  document.querySelectorAll('.seg-top [data-m]').forEach(b=>
-    b.onclick=()=>{sumMode=b.dataset.m;renderCycles()});
+  if(sumMode==='rows'){bindOrder();bindMore();}
+  afterRender();
   document.querySelectorAll('[data-lw]').forEach(b=>
     b.onclick=()=>{lowWindow=b.dataset.lw==='true';renderCycles()});
   document.querySelectorAll('[data-pm]').forEach(b=>
@@ -963,12 +1059,128 @@ function renderCycles(){
   document.getElementById('side').innerHTML='';
 }
 
+/**
+ * Вага для розрахунку мл/кг/год.
+ *
+ * Живе у властивостях скрипта, а не колонкою в аркуші, навмисно. Це не вимір:
+ * кота зважують коли-не-коли на вагах, яким ніхто не вірить. Колонка на кожну
+ * добу перетворила б одне приблизне число на дані, які треба вести — і які,
+ * якщо вага виявиться кривою, довелося б правити заднім числом по всіх добах.
+ * Тут це множник у формулі: одне значення, два тапи, однакове на всіх
+ * пристроях і в лікарки.
+ *
+ * Копія лежить у localStorage, щоб число було на екрані до відповіді скрипта
+ * і щоб не показувати чужу цифру, коли мережі немає.
+ */
+const WEIGHT_KEY='venya.weight';
+const weight=()=>{
+  const w=parseFloat(serverWeight||localStorage.getItem(WEIGHT_KEY));
+  return w>0&&w<30?w:5;
+};
+const kgText=()=>String(weight()).replace('.',',');
+
+/* Доби розділу — за спільним сортуванням, тим самим, що в журналі. */
+function urineDays(){
+  const all=[...new Set([...urine.map(u=>u.date),...stool.map(s=>s.date)])].sort();
+  return chronoNow()?all:all.reverse();
+}
+const mlOn=date=>urine.filter(u=>u.date===date).reduce((s,u)=>s+u.ml,0);
+/* Мілілітри за добу, поділені на вагу і на 24 години. Поточна доба ще не
+   скінчилась, тому її число завжди занижене — його показуємо приглушено. */
+const rateOn=date=>mlOn(date)/weight()/24;
+const rate1=r=>r.toFixed(1).replace('.',',');
+
+/**
+ * Доба одним рядком. Кількості змін лотка тут немає навмисно: вона нічого не
+ * каже про кота — за одну зміну могло бути і одне сечовипускання, і три. Бал
+ * Пуріни теж прибраний: верхнім індексом його однаково не видно, а окремою
+ * колонкою він не вартий ширини. І те, й інше лишається в «Записах».
+ */
+function urineDaysView(){
+  const list=urineDays().filter(d=>mlOn(d)>0||stoolOn(d));
+  if(!list.length)return '<div class="empty">Записів ще немає.</div>';
+  const full=list.filter(d=>d!==TODAY&&mlOn(d)>0);
+  const avg=full.length?full.reduce((s,d)=>s+rateOn(d),0)/full.length:null;
+  const rows=list.map(date=>{
+    const ml=mlOn(date), st=stoolOn(date), today=date===TODAY;
+    const r=ml?rateOn(date):null;
+    return `<div class="urow${today?' part':''}">
+      <div class="dcell"><b>${dateShort(date)}</b></div>
+      <div class="ust">${st&&st.cat?esc(st.cat):'<span class="dash">—</span>'}</div>
+      <div class="uv">${ml?`<b>${ml}</b> мл`:'<span class="dash">—</span>'}</div>
+      <div class="urate"${today?' title="доба ще не скінчилась"':''}>${
+        r!=null?`<b>${rate1(r)}</b>`:'<span class="dash">—</span>'}</div>
+    </div>`;
+  }).join('');
+  /* Слова ліворуч, числа праворуч: погляд іде по датах униз, а колонки цифр
+     лишаються суцільними — так їх можна порівнювати, не читаючи. */
+  return `${avg!=null?`<div class="sum-note">За ${full.length} ${
+      plural(full.length,'повну добу','повні доби','повних діб')} в середньому
+      <b>${rate1(avg)}</b> мл/кг/год.</div>`:''}
+    <div class="thead"><div class="urow hd"><div>Доба</div><div>Стул</div>
+      <div>Сеча</div><div>мл/кг/год</div></div></div>
+    <div class="tbl">${rows}</div>`;
+}
+
+function openWeight(){
+  shell('Вага для розрахунку',`
+    <div class="field"><label for="w-kg">Кілограми</label>
+      <input id="w-kg" type="text" inputmode="decimal"
+        value="${kgText()}"></div>
+    <div class="hint">Тільки для розрахунку мл/кг/год. Одне число на всі доби,
+      історія не ведеться: виправили — і всі підрахунки стали за новою вагою.</div>`);
+  document.getElementById('saveBtn').onclick=async()=>{
+    const n=parseFloat((document.getElementById('w-kg').value||'').replace(',','.'));
+    if(!(n>0&&n<30)){close();return}
+    /* Показуємо одразу, зберігаємо слідом: якщо скрипт відмовить, кажемо це
+       вголос, а не лишаємо на екрані число, якого на сервері немає. */
+    serverWeight=n;localStorage.setItem(WEIGHT_KEY,String(n));
+    close();renderUrine();
+    try{ await API.setWeight(n); }
+    catch(err){
+      const m=String(err.message||err);
+      /* Старий скрипт не знає такої дії. Це не помилка запису, а різниця
+         версій, і сказати про неї треба саме так — інакше людина шукає
+         поламане там, де просто не оновлений скрипт. */
+      say(m.indexOf('unknown sheet')>=0||m.indexOf('unknown action')>=0
+        ?'Вага збережена лише на цьому пристрої — у таблиці ще старий скрипт'
+        :'Вагу не збережено: '+esc(m),'err');
+    }
+  };
+}
+function bindWeight(){
+  const b=document.querySelector('[data-w]');
+  if(b)b.onclick=openWeight;
+}
+
+/* «За добу» першим: у цей розділ заходять із питанням «скільки за добу», а не
+   «коли міняла лоток». Записи лишаються там, де в них є потреба. */
+let urineMode='days';
+function urineBar(){
+  const seg=`<div class="seg-top">${[['days','За добу'],['rows','Записи']]
+    .map(([k,l])=>`<button data-u="${k}" class="${urineMode===k?'on':''}">${l}</button>`)
+    .join('')}</div>`;
+  const w=urineMode==='days'
+    ? `<button class="ordbtn wbtn" data-w>вага ${kgText()} кг</button>` : '';
+  const key=urineMode==='days'?'uday':'urows';
+  return `<div class="stick">${seg}<div class="jrow">${orderBtn()}${w}${
+    hintBtn(key)}</div>${hintCard(key)}</div>`;
+}
 function renderUrine(){
-  let html=`<div class="sum-note">Час — це коли я побачила і поміняла лоток,
-    а не коли кіт сходив. За одну зміну могло бути кілька разів, тому кількість
-    записів не дорівнює кількості сечовипускань, а мілілітри приблизні.</div>`;
-  [...new Set([...urine.map(u=>u.date),...stool.map(s=>s.date)])].sort().reverse().forEach(date=>{
-    const list=urine.filter(u=>u.date===date).sort((a,b)=>b.time.localeCompare(a.time));
+  beginRender();
+  const bar=urineBar(), more=moreBar('urine'), chrono=chronoNow();
+  document.getElementById('side').innerHTML='';
+  if(urineMode==='days'){
+    document.getElementById('main').innerHTML=
+      bar+(chrono?more:'')+urineDaysView()+(chrono?'':more);
+    bindMore();bindWeight();bindUrineMode();bindOrder();
+    bindHint(renderUrine);afterRender();
+    return;
+  }
+  let html=bar+(chrono?more:'');
+  urineDays().forEach(date=>{
+    const list=urine.filter(u=>u.date===date)
+      .sort((a,b)=>chrono?a.time.localeCompare(b.time):b.time.localeCompare(a.time));
     const total=list.reduce((s,u)=>s+u.ml,0);
     html+=`<section class="u-day">
       <div class="u-top"><span class="day-name">${dayName(date)}</span>
@@ -979,12 +1191,15 @@ function renderUrine(){
           st.text?' — '+esc(st.text):''}</div>`:''})()}
     </section>`;
   });
-  document.getElementById('main').innerHTML=html+moreBar('urine');
-  bindMore();
+  document.getElementById('main').innerHTML=html+(chrono?'':more);
+  bindMore();bindUrineMode();bindOrder();bindHint(renderUrine);
   document.querySelectorAll('[data-uedit]').forEach(c=>c.onclick=()=>openUrine(c.dataset.uedit));
-  document.getElementById('side').innerHTML=`<h3>За добу</h3><div class="sub">${
-    [...new Set(urine.map(u=>u.date))].sort().reverse().map(d=>
-      `${dayName(d)} — <b style="color:var(--sage)">${urine.filter(u=>u.date===d).reduce((s,u)=>s+u.ml,0)}</b> мл`).join('<br>')}</div>`;
+  afterRender();
+}
+function bindUrineMode(){
+  /* Зміна подання — це той самий захід у розділ: стаємо на найсвіжіші. */
+  document.querySelectorAll('.seg-top [data-u]').forEach(b=>
+    b.onclick=()=>{urineMode=b.dataset.u;needScroll=true;renderUrine()});
 }
 
 /* Курс = призначення. Прийоми до нього прив'язані, тому повторне призначення
@@ -1034,11 +1249,15 @@ function courseCard(r){
       r.note?`<br>${esc(r.note)}`:''}</div>
     ${rows?`<div class="mlist">${rows}</div>`:''}
     ${st.list.length>5?`<div class="mmore">показано останні 5</div>`:''}
-    ${st.active?`<button class="btn ghost small" data-endr="${r.id}">Завершити курс</button>`:''}
+    ${API.canWrite()?`<div class="card-acts">
+      <button class="btn ghost small" data-redit="${r.id}">Змінити призначення</button>
+      ${st.active?`<button class="btn ghost small" data-endr="${r.id}">Завершити курс</button>`:''}
+    </div>`:''}
   </section>`;
 }
 
 function renderMeds(){
+  beginRender();
   const act=regimens.filter(r=>!r.to).sort((a,b)=>b.from.localeCompare(a.from));
   const past=regimens.filter(r=>r.to).sort((a,b)=>b.to.localeCompare(a.to));
 
@@ -1057,8 +1276,10 @@ function renderMeds(){
   bindMore();
   document.getElementById('side').innerHTML='';
   const back=document.querySelector('[data-more="back"]');
-  if(back)back.onclick=()=>{moreMode=null;renderMore()};
+  if(back)back.onclick=()=>{moreMode=null;needScroll=true;renderMore()};
   document.querySelectorAll('[data-medit]').forEach(r=>r.onclick=()=>openMed(r.dataset.medit));
+  document.querySelectorAll('[data-redit]').forEach(b=>
+    b.onclick=()=>openRegimen(+b.dataset.redit));
   document.querySelectorAll('[data-endr]').forEach(b=>b.onclick=()=>{
     const r=regimens.find(x=>x.id===+b.dataset.endr);
     const last=meds.filter(m=>m.rid===r.id).map(m=>m.date).sort().pop();
@@ -1069,6 +1290,7 @@ function renderMeds(){
   const bReg=document.getElementById('addReg'), bMed=document.getElementById('addMed');
   if(bReg)bReg.onclick=()=>openRegimen();
   if(bMed)bMed.onclick=()=>openMed();
+  afterRender();
 }
 
 function openRegimen(id){
@@ -1425,6 +1647,7 @@ let moreMode=null;
 
 function renderMore(){
   if(moreMode==='meds')return renderMeds();
+  beginRender();
   document.getElementById('side').innerHTML='';
   document.getElementById('main').innerHTML=`
     <div class="more-list">
@@ -1436,25 +1659,26 @@ function renderMore(){
         rel="noopener">Хронологія<span class="mi-sub">аналізи, історія хвороби</span></a>`:''}
     </div>
     <div class="more-note">Збірка v${BUILD}${API.env()==='dev'?' · DEV':''}<br>
-      Дані станом на ${hhmmOf(new Date(API.cachedAt()))}.</div>`;
+      Дані станом на ${hhmmOf(new Date(API.cachedAt()))}.<br>
+      ${loadedFrom?`Завантажено з ${dateShort(loadedFrom)}${
+        allLoaded?' — це вся історія':', є старіші'}.`:''}</div>`;
   document.querySelector('[data-more="meds"]').onclick=()=>{
-    moreMode='meds';renderMore();
+    moreMode='meds';needScroll=true;renderMore();
   };
+  afterRender();
 }
 
 const views={glucose:renderGlucose,cycles:renderCycles,urine:renderUrine,more:renderMore};
 function setView(v){
   document.body.classList.remove('hh');
-  /* запам'ятовуємо, де людина стояла на попередній вкладці, і повертаємо туди
-     при поверненні — замість того щоб щоразу кидати в кінець */
-  /* Пам'ять позиції потрібна лише при переході між вкладками. Для
-     перемалювання того самого вигляду вона шкідлива: зберігає позицію до
-     рендеру, відновлює після, і якщо між цим щось змінило висоту — тягне
-     сторінку не туди. */
+  /* Захід у розділ ставить сторінку на найсвіжіші записи — там, куди веде
+     сортування. Пам'яті позиції тут більше немає: у списку, що читається
+     згори вниз, «де я був минулого разу» майже завжди означало «на найстаріших
+     записах», бо саме туди відкривався розділ уперше.
+     Прапорець ставимо до малювання: його читає afterRender() всередині. */
   const sameView=(v===view);
-  if(!sameView)scrollMemo[view]=window.scrollY;
-  const back=sameView?null:scrollMemo[v];
-  view=v;views[v]();
+  if(!sameView)needScroll=true;
+  view=v;views[v]();updateJump();
   /* «＋» знає, де ти стоїш: у журналі це замір, у сечі — лоток або стул.
      Зайвого питання «що записуємо» не потрібно. */
   document.getElementById('addBtn').classList.toggle('hidden',
@@ -1462,8 +1686,6 @@ function setView(v){
   document.querySelectorAll('.tabbar [data-view]').forEach(b=>
     b.setAttribute('aria-selected', String(b.dataset.view===v)));
   updateNow();
-  if(back!=null&&!pinNewest)requestAnimationFrame(()=>window.scrollTo({top:back}));
-  pinNewest=false;
 }
 document.querySelectorAll('.tabbar [data-view]').forEach(t=>
   t.onclick=()=>{ if(t.dataset.view==='more')moreMode=null; setView(t.dataset.view); });
@@ -1563,16 +1785,16 @@ if(banner)banner.onclick=()=>{ if(API.failed().length)openFailed(); };
 const hhmmOf=d=>String(d.getHours()).padStart(2,'0')+':'+
   String(d.getMinutes()).padStart(2,'0');
 
-let firstPaint=true;
+let paints=0;
 
-/* Тягнути до найсвіжіших має лише перше малювання. Оновлення даних, що
-   приходить за секунди після нього, не має висмикувати з місця, якщо людина
-   вже кудись догорталась або щось розгорнула. */
 function show(data){
   adopt(data);
   markAllLoaded(data);
   document.body.classList.toggle('ro',!API.canWrite());
-  if(firstPaint){ pinNewest=true; needScroll=true; firstPaint=false; }
+  /* Малювань при старті два: із кешу і зі свіжих даних за кілька секунд.
+     Обидва стають на найсвіжіші — інакше друге лишало б там, куди приїхало
+     перше, а даних за цей час могло прибавитись. Далі вже нікуди не тягнемо. */
+  if(paints<2){ needScroll=true; paints++; }
   setView(view);
 }
 

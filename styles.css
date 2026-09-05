@@ -1,8 +1,8 @@
 :root{
   --bg:#17181A;
   --card:#212227;
-  --card-day:#26272C;       /* ранкова половина — трохи світліша за решту UI */
-  --card-night:#161719;     /* половина після вечірнього уколу — тільки світлість */
+  --card-day:#26272C;
+  --card-night:#161719;
   --panel:#1E1F22;
   --hairline:#2E3036;
   --text:#E8EAEC;
@@ -23,6 +23,7 @@
   --head-h:56px;
   --bar-h:51px;
   --jbar-h:57px;
+  --stick-h:0px;        /* measured after every render, see afterRender() */
   --pad:14px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -43,7 +44,6 @@ h1 em{font-style:normal;color:var(--faint)}
 .now b{color:var(--text);font-weight:600}
 .tabs{display:flex;gap:20px;margin-top:16px;padding:0 var(--pad);overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-/* ховаємо шапку при скролі вниз, повертаємо при найменшому скролі вгору */
 body.hh header{transform:translateY(-100%)}
 @media(prefers-reduced-motion:reduce){header{transition:none}}
 .tab{background:none;border:0;padding:0 0 12px;cursor:pointer;font-family:inherit;
@@ -55,7 +55,7 @@ main{padding:0 0 76px}
 .legend{display:flex;flex-wrap:wrap;gap:8px 16px;padding:0 var(--pad) 14px}
 .legend span{font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px}
 
-/* ---------- доба карткою ---------- */
+/* ---------- one day as a card ---------- */
 .day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
   border-radius:18px;overflow:hidden}
 .day-head{width:100%;background:none;border:0;cursor:pointer;text-align:left;
@@ -87,10 +87,10 @@ main{padding:0 0 76px}
 .entry.night{background:var(--card-night)}
 .entry+.entry .card{border-top:1px solid var(--hairline)}
 .gutter{position:relative}
-/* Одна смуга на всю висоту рядка з трьома зупинками: середня стоїть рівно в
-   центрі вузла (22px зверху + половина від 12px = 28px), тому перехід кольору
-   сходиться саме там і зламу не видно. Крайні записи не потребують окремих
-   правил: у них просто немає --c-in або --c-out, і кінець згасає в прозоре. */
+/* One gradient over the full row height with three stops: the middle one sits
+   exactly at the centre of the node (22px above + half of 12px = 28px), so the
+   colours meet there and the seam disappears. The first and last rows need no
+   special case — they simply have no --c-in or --c-out and fade to transparent. */
 .gutter::before{content:"";position:absolute;left:24px;width:2px;top:0;bottom:0;
   background:linear-gradient(to bottom,
     color-mix(in srgb, var(--dot,transparent) 50%, var(--c-in,transparent)) 0,
@@ -134,23 +134,33 @@ main{padding:0 0 76px}
   color:var(--sage-dim);display:block;margin-bottom:6px}
 .vetnote p{font-size:13.5px;line-height:1.55;color:#C4C8CE}
 
-/* ---------- зведення: доба карткою, всередині ранок/вечір ---------- */
+/* ---------- summary: day card, morning and evening inside ---------- */
 .sum-note{padding:14px var(--pad) 16px;font-size:12.5px;color:var(--muted);line-height:1.6}
-/* Разова картка-пояснення. Прив'язана до екрана, а не до місця в списку:
-   список відкривається на найсвіжіших, тобто внизу, і текст угорі людина
-   побачила б лише догортавши — тобто тоді, коли він уже не потрібен. */
-.coach{position:fixed;left:50%;transform:translateX(-50%);
-  top:calc(var(--head-h) + var(--jbar-h) + 10px);z-index:44;
-  width:calc(100% - var(--pad) * 2);max-width:452px;
-  padding:15px 16px 13px;border-radius:14px;
+/* Explanation panel behind the (i) button: part of the page, not an overlay,
+   so it pushes content down instead of covering it and needs no dismissing. */
+.coach{margin:0 var(--pad);padding:12px 14px;border-radius:14px;
   background:var(--panel);border:1px solid var(--sage-dim);
-  box-shadow:0 10px 30px rgba(0,0,0,.45)}
-.coach-text{font-size:12.5px;color:var(--muted);line-height:1.6;margin-bottom:12px}
-.coach .btn{flex:0 0 auto;padding:9px 18px;font-size:13px}
+  font-size:12.5px;color:var(--muted);line-height:1.6}
+/* An icon alone does not say what is under it. The circle stays, but a word
+   goes next to it: nobody taps into the unknown hoping for the unknown. */
+.ibtn{margin-left:auto;padding:8px 11px 8px 8px}
+.ibtn i{font-family:var(--f-display);font-style:italic;font-size:12px;
+  width:17px;height:17px;flex:0 0 auto;border-radius:50%;
+  border:1px solid currentColor;display:inline-flex;
+  align-items:center;justify-content:center;line-height:1}
 .cyc-day{margin:0 var(--pad) 12px;background:var(--card);border:1px solid var(--hairline);
   border-radius:18px;overflow:hidden}
 .tbl{margin:0 var(--pad) 14px;background:var(--card);border:1px solid var(--hairline);
   border-radius:18px;overflow:hidden}
+/* The column header sits outside the card, not in it: sticky positioning does
+   not survive an ancestor with overflow:hidden, and the card needs that to clip
+   its rounded corners. Out here it can pin under the bar — and when the bar
+   hides on scroll it takes the top spot, which is the only moment the header is
+   really needed. */
+.thead{position:sticky;top:calc(var(--head-h) + var(--stick-h));z-index:20;
+  margin:0 var(--pad);background:var(--bg);transition:top .22s ease}
+body.hh .thead{top:0}
+.thead .trow,.thead .urow{border:0}
 .trow{display:grid;grid-template-columns:52px minmax(0,1fr) minmax(0,1fr);
   align-items:stretch;cursor:default}
 .trow[data-day]{cursor:pointer}
@@ -179,7 +189,8 @@ main{padding:0 0 76px}
 .cell .d.skip{color:var(--faint);border-color:var(--hairline)}
 .cell .dash{font-size:14px;color:var(--faint)}
 
-/* А: два рядки — передукольне(час) з дозою-крапкою зверху, надір(+N год) знизу */
+/* Two lines per cell: pre-shot value (time) with the dose dot on top, lowest
+   measured value (+N h) below. Both numbers start at the same left edge. */
 .cell2{background:var(--card-day);padding:9px 10px;font-variant-numeric:tabular-nums;
   min-width:0;letter-spacing:-.01em}
 .cell2.pm{background:var(--card-night)}
@@ -187,7 +198,6 @@ main{padding:0 0 76px}
 .cell2-row2{display:flex;align-items:baseline;gap:6px;margin-top:2px}
 .cell2 .v1,.cell2 .v2,.cell2 .t1,.cell2 .t2,.cell2 .dash{
   font-family:var(--f-body);font-size:13px;letter-spacing:-.01em}
-/* момент уколу і доза — жирним, найнижче виміряне звичайним */
 .cell2 .v1,.cell2 .t1{font-weight:700}
 .cell2 .v2,.cell2 .t2,.cell2 .dash{font-weight:400}
 .cell2 .t1,.cell2 .t2{color:var(--faint)}
@@ -224,6 +234,30 @@ main{padding:0 0 76px}
   border:1px solid var(--hairline);font-variant-numeric:tabular-nums;cursor:pointer}
 .u-chip{display:inline-grid;grid-template-columns:38px 34px;align-items:baseline}
 .u-chip b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+/* Daily litter table: one day is one row. Fixed columns for the three numeric
+   fields so they line up down the table; stool takes what is left and clips —
+   it is one word out of five known ones and stays recognisable truncated. */
+.urow{display:grid;grid-template-columns:46px minmax(0,1fr) 62px 58px;
+  gap:10px;align-items:baseline;padding:11px 12px;
+  font-variant-numeric:tabular-nums}
+.urow+.urow{border-top:1px solid var(--hairline)}
+.urow.hd div{font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--faint)}
+.urow.hd div:nth-child(3),.urow.hd div:nth-child(4),
+.urow .uv,.urow .urate{text-align:right}
+
+.urow .dcell{font-size:13px;color:var(--muted)}
+.urow .dcell b{color:var(--text);font-weight:700;font-size:13px;letter-spacing:-.01em}
+.urow .dash{color:var(--faint)}
+.urow .uv{font-size:13.5px;color:var(--muted)}
+.urow .uv b{color:var(--text);font-weight:700;font-size:15px}
+.urow .urate{font-size:13.5px;color:var(--faint)}
+.urow .urate b{color:var(--sage);font-weight:700;font-size:15px}
+.urow .ust{font-size:12.5px;color:var(--muted);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.urow.part .urate b{color:var(--faint)}
+.wbtn{color:var(--sage);border-color:color-mix(in srgb,var(--sage) 35%,transparent)}
+
 .stool{margin-top:14px;font-size:13px;color:var(--muted);line-height:1.5;display:flex;gap:9px}
 .stool b{color:var(--muted);font-weight:500}
 .med-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
@@ -255,36 +289,59 @@ main{padding:0 0 76px}
 .med-acts{display:flex;gap:8px;margin:14px var(--pad)}
 .med-acts .btn.ghost{flex:1 1 0;white-space:nowrap;font-size:12.5px;padding:11px 10px}
 .btn.small{font-size:12px;padding:9px 14px;margin-top:12px}
+/* .btn.ghost is 34% wide — that is the two-button footer of a form. Here the
+   buttons sit inside a card and size to their own text instead. */
+.card-acts{display:flex;flex-wrap:wrap;gap:8px}
+.card-acts .btn{flex:0 0 auto;white-space:nowrap}
 .past{margin:6px var(--pad) 20px}
 .past>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;
   font-size:12.5px;color:var(--muted);padding:12px 4px}
 .past>summary::-webkit-details-marker{display:none}
 .past[open]>summary .mb-chev{transform:rotate(180deg)}
-/* Форма зеленувата (--form), тому нейтрально-сірий блок ліків у ній читався
-   як чужий елемент. Беремо той самий фон, що й решта полів форми. */
+/* The sheet is greenish (--form), so a neutral grey meds block read as a
+   foreign element inside it. Reuse the background of the other form fields. */
 .medbox{border:1px solid var(--hairline);border-radius:12px;background:var(--form-field)}
 .medbox>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;
   padding:12px 13px}
 .medbox>summary::-webkit-details-marker{display:none}
 .medbox[open]>summary .mb-chev{transform:rotate(180deg)}
 .mb-label{font-size:12px;color:var(--muted)}
-/* Зелений у формі означає «вибрано», а не «це ліки». Поки нічого не
-   позначено, підпис такий самий сірий, як решта підказок. */
+/* Green inside the sheet means "selected", not "this is medication". While
+   nothing is ticked the label stays as grey as every other hint. */
 .mb-sum{flex:1;min-width:0;font-size:12.5px;color:var(--muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mb-chev{display:inline-flex;line-height:0;color:var(--faint);transition:transform .18s}
 .medbox .medpick{padding:2px 13px 13px}
-/* оголошено раніше за .seg-in, тому підсилюємо селектором */
-/* Три контроли на 375 px не вміщались і розсували сторінку вбік — а разом з
-   нею роз'їжджалась липка колонка дат, і таблиця виглядала задвоєною. */
-/* Липка: журнал відкривається на найсвіжіших, тобто внизу, і якби панель
-   лишалась угорі, до сортування довелося б гортати через усі записи.
-   З кадру її прибирає режим перегляду, а не відсутність липкості. */
+/* declared before .seg-in, so the selector is strengthened to win */
+/* Three controls did not fit 375px and pushed the page sideways — the sticky
+   date column drifted with it and the table looked doubled. */
+/* Sticky: the journal opens on the newest rows, i.e. at the bottom, and a bar
+   left at the top would mean scrolling past every record to reach sorting.
+   Screenshot mode is what removes it from the frame, not a lack of stickiness. */
 .jbar{position:sticky;top:var(--head-h);z-index:30;display:flex;gap:8px;
   overflow-x:auto;scrollbar-width:none;
   align-items:center;padding:10px var(--pad) 12px;background:var(--bg);
   border-bottom:1px solid var(--hairline);transition:top .22s,transform .22s ease}
-body.hh .jbar{top:0}
+/* Hide on scroll down, back on the smallest move up — the same behaviour as
+   the header, and for the same reason: on a phone the header plus this bar
+   would otherwise eat a fifth of the screen while you are reading a list.
+   Shifted by its own height plus the header's, so it clears the top entirely
+   instead of parking under a header that is itself gone. */
+body.hh .jbar{transform:translateY(calc(-100% - var(--head-h)))}
+
+/* Same idea one level up: the view switcher is pinned together with the
+   controls, because you need to change view in the middle of a list at least
+   as often as at its start — and scrolling all the way up for that is a chore.
+   One sticky wrapper rather than two stacked sticky elements: stacked ones
+   would each stick to the same offset and overlap. */
+.stick{position:sticky;top:var(--head-h);z-index:30;background:var(--bg);
+  border-bottom:1px solid var(--hairline);padding-bottom:11px;
+  transition:top .22s,transform .22s ease}
+body.hh .stick{transform:translateY(calc(-100% - var(--head-h)))}
+.stick .seg-top{margin:11px var(--pad) 0}
+.jrow{display:flex;gap:8px;align-items:center;overflow-x:auto;
+  scrollbar-width:none;padding:11px var(--pad) 0}
+.jrow::-webkit-scrollbar{display:none}
 
 .jbar::-webkit-scrollbar{display:none}
 .ordbtn.icon{padding:9px 10px}
@@ -293,15 +350,14 @@ body.hh .jbar{top:0}
   font-family:inherit;font-size:11.5px;padding:9px 11px;cursor:pointer;white-space:nowrap}
 .ordbtn:active{color:var(--text)}
 .dtable{margin:0 var(--pad) 24px;font-variant-numeric:tabular-nums}
-/* Ширини колонок у px і на .dtable, а не в ch: ch рахується від власного
-   font-size елемента, а в заголовка він 9px проти 12.5px у рядків — саме через
-   це підписи стояли не над своїми колонками. */
-/* Колонка вузька навмисно: кожен зайвий піксель тут — це піксель, якого
-   бракує нотаткам, а там він вирішує, чи перенесеться рядок. Тому заголовок
-   короткий («ммоль»), а не «глюкоза». */
+/* Column widths in px and on .dtable, not in ch: ch resolves against the
+   element's own font-size, and the header's is 9px against 12.5px in the rows —
+   which is exactly why the captions did not stand above their columns. */
+/* Deliberately narrow: every pixel spent here is a pixel the note column
+   lacks, and there it decides whether the line wraps. Hence the short header. */
 .dtable{--c-date:42px;--c-time:40px;--c-glu:46px}
-/* flex, а не grid: у grid порожні комірки примудрялись породжувати другий ряд
-   і рядок виростав до 35px замість 22 при тому самому вмісті. */
+/* flex, not grid: in grid the empty cells managed to spawn a second track and
+   the row grew to 35px instead of 22 with the very same content. */
 .dr{display:flex;align-items:flex-start;gap:5px;padding:3px 6px;
   font-size:12.5px;line-height:16px;cursor:pointer}
 .dr>*{min-height:0;line-height:16px;padding-top:0;padding-bottom:0}
@@ -315,7 +371,9 @@ body.hh .jbar{top:0}
   font-size:9px;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);
   padding-top:8px;padding-bottom:7px;z-index:2;
   box-shadow:0 1px 0 var(--hairline);transition:top .22s}
-body.hh .dr.dh{top:var(--jbar-h)}
+/* The column header takes the freed place: with both bars gone it is the only
+   thing left to say which column is which. */
+body.hh .dr.dh{top:0}
 .dr.dh:nth-child(even){background:var(--bg)}
 .dr.dh{line-height:12px}
 .dr.dh>*{line-height:12px}
@@ -360,11 +418,21 @@ body.hh .dr.dh{top:var(--jbar-h)}
 .seg button.on{background:var(--panel);color:var(--text)}
 .field{margin-bottom:15px}
 .field label{display:block;font-size:11.5px;color:var(--faint);margin-bottom:7px}
-.field input,.field textarea{width:100%;background:var(--form-field);
+.field input,.field textarea,.field select{width:100%;background:var(--form-field);
   border:1px solid var(--hairline);border-radius:12px;padding:13px 14px;
   color:var(--text);font-family:inherit;font-size:15px}
 .field textarea{resize:vertical;min-height:66px;font-size:14px}
-.field input:focus,.field textarea:focus{outline:2px solid var(--sage-dim);outline-offset:-1px}
+/* A native select keeps the OS look — white box, system font — which reads as a
+   hole in the sheet. appearance:none strips it; the arrow is drawn back in as a
+   background chevron, and the extra right padding keeps text clear of it. */
+.field select{appearance:none;-webkit-appearance:none;padding-right:38px;
+  background-image:linear-gradient(45deg,transparent 50%,var(--faint) 50%),
+                   linear-gradient(135deg,var(--faint) 50%,transparent 50%);
+  background-position:calc(100% - 19px) calc(50% + 1px),calc(100% - 14px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+.field select option{background:var(--panel);color:var(--text)}
+.field input:focus,.field textarea:focus,.field select:focus{
+  outline:2px solid var(--sage-dim);outline-offset:-1px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .hint{font-size:11px;color:var(--faint);margin-top:6px}
 .time-mask{font-variant-numeric:tabular-nums;letter-spacing:.06em}
@@ -386,12 +454,12 @@ body.hh .dr.dh{top:var(--jbar-h)}
 
 @media(min-width:900px){
   :root{--pad:24px}
-  /* сітку задає пізніший блок з бічною навігацією */
+  /* the grid itself is defined by the later side-navigation block */
   .app{display:grid;align-items:start}
   header{grid-column:1/-1}
-  /* min-width:0 обов'язковий: за замовчуванням елемент сітки не звужується
-     нижче за власний зміст, а всередині лежить графік завширшки в тисячі
-     пікселів — і замість того щоб гортатись, він розсував усю верстку. */
+  /* min-width:0 is mandatory: by default a grid item will not shrink below its
+     own content, and inside sits a chart thousands of pixels wide — instead of
+     scrolling it stretched the whole layout. */
   main{min-width:0}
   .side{min-width:0}
   .side{display:block;position:sticky;top:calc(var(--head-h) + 24px);padding:24px 28px}
@@ -402,7 +470,7 @@ body.hh .dr.dh{top:var(--jbar-h)}
   .sheet.open{transform:translateY(0)}
 }
 
-/* ---------- зведення: перемикач подань ---------- */
+/* ---------- summary: view switcher ---------- */
 .seg-top{display:flex;gap:3px;margin:0 var(--pad) 14px;background:var(--panel);
   border:1px solid var(--hairline);border-radius:13px;padding:4px}
 .seg-top button{flex:1;background:none;border:0;cursor:pointer;font-family:inherit;
@@ -420,7 +488,7 @@ body.hh .dr.dh{top:var(--jbar-h)}
   font-size:12px;color:var(--muted);padding:7px 4px;border-radius:8px;white-space:nowrap}
 .seg-in button.on{background:var(--card-day);color:var(--text)}
 
-/* сітка по годинах */
+/* hour grid */
 .grow{display:grid;grid-template-columns:42px 1fr 58px;gap:9px;align-items:center;margin-bottom:3px}
 .gd{font-size:10.5px;color:var(--insulin);text-align:right;font-variant-numeric:tabular-nums;
   white-space:nowrap;opacity:.85}
@@ -440,7 +508,7 @@ body.hh .dr.dh{top:var(--jbar-h)}
 .gruler{display:grid;grid-template-columns:repeat(var(--n),1fr);gap:2px;margin-top:7px}
 .gruler span{font-size:9.5px;color:var(--faint);font-variant-numeric:tabular-nums}
 
-/* тренд і загальний графік */
+/* trend and period charts */
 .chart-box{margin:0 var(--pad) 14px;background:var(--card);border:1px solid var(--hairline);
   border-radius:18px;padding:16px 16px 14px;overflow:hidden}
 .chart-box h4{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);
@@ -464,7 +532,7 @@ body.hh .dr.dh{top:var(--jbar-h)}
 
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 
-/* ── стани завантаження, мережі й режиму перегляду ── */
+/* ── loading, network and screenshot states ── */
 .empty{padding:56px var(--pad);text-align:center;color:var(--muted);
   font-size:14px;line-height:1.65}
 
@@ -472,8 +540,8 @@ body.hh .dr.dh{top:var(--jbar-h)}
   font-family:var(--f-body);font-size:9px;font-weight:700;letter-spacing:.09em;
   color:#fff;background:#B3252F;border-radius:0 0 4px 4px;padding:1px 6px 2px}
 
-/* Знизу, а не зверху: шапка ховається при гортанні, а це має бути видно завжди. */
-/* над баром, а не поверх нього */
+/* At the bottom rather than the top: the header hides on scroll and this must
+   stay visible at all times. Above the tab bar, not over it. */
 .banner{position:fixed;left:0;right:0;bottom:57px;z-index:59;
   padding:11px var(--pad);font-size:12.5px;line-height:1.45;text-align:center;
   background:var(--panel);color:var(--muted);
@@ -486,8 +554,8 @@ body.hh .dr.dh{top:var(--jbar-h)}
 .morebar{display:flex;justify-content:center;padding:14px var(--pad) 6px}
 .morebar .btn{flex:0 0 auto;white-space:nowrap;font-size:12.5px;padding:9px 18px}
 
-/* Язичок до найновіших: з'являється, лише коли ти від них далеко. */
-/* над нижнім баром, а не під ним */
+/* Jump to the newest records: appears only when you are far from them.
+   Sits above the tab bar, not under it. */
 .jump{position:fixed;right:var(--pad);bottom:76px;z-index:45;
   width:42px;height:42px;border-radius:50%;padding:0;
   background:var(--panel);color:var(--muted);border:1px solid var(--hairline);
@@ -496,19 +564,19 @@ body.hh .dr.dh{top:var(--jbar-h)}
 .jump[hidden]{display:none}
 body.shot .jump{display:none}
 
-/* режим скріншота: з кадру йде все, що не є даними */
+/* screenshot mode: everything that is not data leaves the frame */
 body.shot .env{display:none}
-/* Кнопка запису в режимі перегляду ховається, і колонка під неї лишала діру
-   посеред смуги. Прибираємо саму колонку. */
+/* The record button is hidden in screenshot mode and its column left a hole in
+   the middle of the bar. Drop the column itself. */
 body.shot .tabbar{grid-template-columns:repeat(4,1fr)}
 .ordbtn.on{color:var(--sage);border-color:color-mix(in srgb,var(--sage) 45%,transparent)}
 
-/* режим перегляду: записів не додають, тому рядки не вдають клікабельність */
+/* read-only role: nothing is added here, so rows do not fake being clickable */
 body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
 
-/* ── нижній бар ───────────────────────────────────────────────────────
-   Керування переїхало вниз, під великий палець: журнал заповнюють уночі
-   однією рукою. Верх екрана лишається даним. */
+/* ── bottom bar ───────────────────────────────────────────────────────
+   Controls moved down, under the thumb: the journal is filled in at night with
+   one hand. The top of the screen is left to the data. */
 .tabbar{position:fixed;left:50%;transform:translateX(-50%);bottom:0;z-index:60;
   width:100%;max-width:480px;display:grid;
   grid-template-columns:1fr 1fr 68px 1fr 1fr;align-items:end;
@@ -527,24 +595,22 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
   box-shadow:0 6px 18px rgba(0,0,0,.4)}
 .tabbar .fab.hidden{display:none}
 
-/* Режим скріншота ховає весь хром, а не лише кнопку: інакше в кадр однаково
-   лізуть панелі. Шапка при цьому теж не липне. */
-/* У режимі перегляду хром не зникає назовсім: інакше з нього неможливо
-   вийти — кнопка виходу зникала разом з панеллю. Замість цього все ховається
-   при гортанні вниз і повертається від найменшого руху вгору. */
+/* Screenshot mode hides all of the chrome, not just the button: otherwise the
+   panels crawl into the frame anyway. The header stops sticking too. */
+/* In screenshot mode the chrome does not vanish for good: that trapped you —
+   the exit button disappeared along with the panel. Instead everything hides on
+   scrolling down and comes back on the smallest movement up. */
 body.shot .env{display:none}
 body.shot main{padding-bottom:24px}
 body.shot .banner{bottom:0}
-body.shot.hh .jbar{transform:translateY(-100%)}
-/* «＋» піднятий над смугою на 20 px, тому зсуву рівно на її висоту мало —
-   знизу лишався шматок кнопки. */
+/* The "+" is raised 20px above the bar, so shifting by exactly the bar height
+   was not enough — a slice of the button stayed on screen. */
 body.shot.hh .tabbar{transform:translate(-50%,calc(100% + 28px))}
-body.shot.hh .dr.dh{top:0}
-/* У режимі перегляду рядки не відкривають форму — можна спокійно показати
-   журнал з телефона, нічого не зачепивши. */
+/* In screenshot mode rows do not open the form — the journal can be shown from
+   the phone without touching anything by accident. */
 body.shot .dr,body.shot .u-chip,body.shot .mrow,body.shot .day-head{cursor:default}
-/* Виділення діапазону: те саме, що виділити клітинки в таблиці перед
-   скріншотом — показати лікарці саме ті рядки, які ще не надсилались. */
+/* Range selection: the same gesture as selecting cells in a spreadsheet before
+   a screenshot — show the vet exactly the rows that were not sent yet. */
 body.shot .dr[data-edit]{cursor:pointer}
 .dr.sel{background:rgba(163,197,133,.07)}
 .dr.sel-a{box-shadow:inset 0 1px 0 var(--sage)}
@@ -552,7 +618,7 @@ body.shot .dr[data-edit]{cursor:pointer}
 .dr.sel-a.sel-b{box-shadow:inset 0 1px 0 var(--sage),inset 0 -1px 0 var(--sage)}
 .jhint{flex:0 0 auto;font-size:11.5px;color:var(--faint);white-space:nowrap}
 
-/* Розділ «Ще» */
+/* the More section */
 .more-list{padding:8px var(--pad) 0}
 .more-item{display:flex;align-items:center;gap:12px;width:100%;
   background:none;border:0;border-bottom:1px solid var(--hairline);
@@ -561,11 +627,11 @@ body.shot .dr[data-edit]{cursor:pointer}
 .more-item .mi-sub{margin-left:auto;font-size:12px;color:var(--faint)}
 .more-note{padding:18px var(--pad);font-size:12px;color:var(--faint);line-height:1.6}
 
-/* ── десктоп ──────────────────────────────────────────────────────────
-   Нижній бар — рішення для великого пальця. На широкому екрані місця
-   вистачає, тому ті самі кнопки стають бічною колонкою ліворуч, а «＋»
-   піднімається над ними окремою кнопкою. Розмітка та сама, міняється лише
-   розкладка — обидва режими лишаються одним кодом. */
+/* ── desktop ──────────────────────────────────────────────────────────
+   The bottom bar is a thumb-reach decision. A wide screen has room to spare, so
+   the same buttons become a left-hand column and the "+" rises above them as a
+   separate button. Same markup, only the layout changes — both modes stay one
+   piece of code. */
 @media(min-width:900px){
   .app{max-width:1240px;
     grid-template-columns:190px minmax(0,1fr) 330px;
@@ -590,9 +656,10 @@ body.shot .dr[data-edit]{cursor:pointer}
   main{grid-column:2;grid-row:2;padding-bottom:56px}
   .side{grid-column:3;grid-row:2;min-width:0}
 
-  /* шапка на десктопі не ховається: місця досить, а стрибки дратують */
+  /* the header does not hide on desktop: there is room, and the jumps annoy */
   body.hh header{transform:none}
-  body.shot.hh .tabbar,body.shot.hh .jbar{transform:none}
+  /* Nothing hides on desktop, so nothing has to slide back either. */
+  body.hh .jbar,body.hh .stick,body.shot.hh .tabbar{transform:none}
 
   .jump{bottom:26px;right:calc(50% - 620px + var(--pad))}
   .banner{bottom:0;left:50%;transform:translateX(-50%);max-width:1240px}

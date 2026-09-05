@@ -111,6 +111,41 @@ function sheetLink_() {
 }
 
 var CACHE_SEC = 300;
+
+/**
+ * Bump this whenever the shape of a doGet response changes.
+ *
+ * The response cache is keyed by the data version, which only moves when the
+ * sheet is written to — so pasting new code into the editor did not invalidate
+ * anything. For five minutes after every redeploy the old code's payloads kept
+ * being served, and the app behaved exactly as it had before the fix. That is
+ * the worst possible way to lose faith in a fix: it looks like it did not work.
+ */
+var CODE_VERSION = 4;
+
+/**
+ * Weight used to turn millilitres per day into ml/kg/h.
+ *
+ * A script property, not a sheet column, on purpose. It is not a measurement:
+ * the cat is weighed now and then on kitchen scales nobody trusts, and a column
+ * per day would turn one rough number into a trail of data that has to be kept
+ * up and, if it ever turns out wrong, corrected backwards. This is a multiplier
+ * in a formula — one value, changed in two taps from the app, the same on every
+ * device and for the vet.
+ */
+var WEIGHT_PROP = 'WEIGHT', WEIGHT_DEFAULT = 5;
+
+function weight_() {
+  var v = parseFloat(PropertiesService.getScriptProperties().getProperty(WEIGHT_PROP));
+  return (v > 0 && v < 30) ? v : WEIGHT_DEFAULT;
+}
+
+function setWeight_(v) {
+  var n = parseFloat(v);
+  if (!(n > 0 && n < 30)) throw new Error('weight out of range: ' + v);
+  PropertiesService.getScriptProperties().setProperty(WEIGHT_PROP, String(n));
+  return n;
+}
 var DEFAULT_DAYS = 14;
 /* Aggregation is opt-in via &agg=1. It used to switch on by itself past a
    threshold, which silently emptied the journal: the views cannot render
@@ -118,8 +153,39 @@ var DEFAULT_DAYS = 14;
 
 /* ──────────────────────────── Small helpers ──────────────────────────── */
 
-function ss_() { return SpreadsheetApp.getActive(); }
-function tz_()  { return ss_().getSpreadsheetTimeZone() || TZ_NAME; }
+/**
+ * Spreadsheet handle and time zone, both remembered for the length of one
+ * execution.
+ *
+ * This is where a read used to spend most of its time. tz_() is called from
+ * iso_() and hhmm_(), i.e. once per date cell and once per time cell — well
+ * over a thousand times on a 30-day window — and every one of them was a real
+ * property read on the spreadsheet, a few milliseconds each across the
+ * JavaScript-to-Java bridge. Seconds of a request went into asking the same
+ * spreadsheet what time zone it is in.
+ *
+ * Each execution gets a fresh global scope, so caching here cannot go stale
+ * between requests. setupSheets() clears it after changing the zone.
+ */
+var SS_CACHE = null, TZ_CACHE = '';
+function ss_() { return SS_CACHE || (SS_CACHE = SpreadsheetApp.getActive()); }
+function tz_()  { return TZ_CACHE || (TZ_CACHE = ss_().getSpreadsheetTimeZone() || TZ_NAME); }
+
+/**
+ * Date -> 'yyyy-MM-dd', remembered by timestamp.
+ *
+ * Utilities.formatDate is a service call too, and a day holds ten or more
+ * rows, so the same handful of dates was being formatted hundreds of times.
+ */
+var DAY_CACHE = {}, MIN_CACHE = {};
+function isoOf_(d) {
+  var k = d.getTime();
+  return DAY_CACHE[k] || (DAY_CACHE[k] = Utilities.formatDate(d, tz_(), 'yyyy-MM-dd'));
+}
+function hhmmOf_(d) {
+  var k = d.getTime();
+  return MIN_CACHE[k] || (MIN_CACHE[k] = Utilities.formatDate(d, tz_(), 'HH:mm'));
+}
 
 function pad2_(n) { return (n < 10 ? '0' : '') + n; }
 
@@ -164,12 +230,81 @@ function table_(name) {
   if (!sh) throw new Error('Sheet "' + name + '" is missing. Run setupSheets() first.');
   var lastCol = Math.max(sh.getLastColumn(), 1);
   var head = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
+  return withHead_(sh, name, head, lastCol, null);
+}
+
+/**
+ * Same table, but header and body fetched in a single getDataRange() call.
+ *
+ * What costs on this platform is the number of round-trips to the spreadsheet,
+ * not the number of rows: each one is roughly half a second regardless. The
+ * read path used to spend four per sheet — getLastColumn, the header row,
+ * getLastRow, the body — times five sheets. getDataRange() is one call that
+ * brings back everything, so the same read costs five round-trips instead of
+ * twenty. Writes keep using table_(): there a full read would be waste.
+ */
+function readTable_(name) {
+  var sh = ss_().getSheetByName(name);
+  if (!sh) throw new Error('Sheet "' + name + '" is missing. Run setupSheets() first.');
+  var all = sh.getDataRange().getValues();
+  var head = all.length ? all[0] : [];
+  return withHead_(sh, name, head, Math.max(head.length, 1), all.slice(1));
+}
+
+function withHead_(sh, name, head, lastCol, rows) {
   var col = {};
   for (var i = 0; i < head.length; i++) {
     var h = String(head[i]).trim();
     if (h) col[h] = i + 1;
   }
-  return {sh: sh, name: name, head: head, col: col, lastCol: lastCol};
+  return {sh: sh, name: name, head: head, col: col, lastCol: lastCol, rows: rows};
+}
+
+/**
+ * Earliest date of a row that actually carries something, ISO, or ''.
+ *
+ * This is what tells the app whether "show 30 more days" still has anything to
+ * show. Guessing it on the client — "the oldest row we got sits exactly on the
+ * window edge, so there is probably more" — cannot distinguish "more data" from
+ * "the data happens to start here", and left the button hanging forever.
+ *
+ * "Carries something" has to be checked, not assumed: the day sheet holds a row
+ * per calendar date with formulas in it, so by date alone it reaches back
+ * further than any stool entry does — and the button promised records that
+ * would never appear. A row counts only when one of `cols` is filled.
+ */
+function firstDate_(t, cols) {
+  var c = t.col['Дата'];
+  if (!c || !t.rows) return '';
+  var want = [];
+  for (var k = 0; k < (cols || []).length; k++) {
+    if (t.col[cols[k]]) want.push(t.col[cols[k]] - 1);
+  }
+  /* Дати порівнюємо як числа і форматуємо одну-єдину, а не кожну: тут
+     проходить увесь аркуш, і форматування рядок за рядком коштувало б більше,
+     ніж саме читання. */
+  var best = '', bestT = null;
+  for (var i = 0; i < t.rows.length; i++) {
+    var row = t.rows[i], filled = !want.length;
+    for (var j = 0; j < want.length && !filled; j++) {
+      var cell = row[want[j]];
+      if (cell !== '' && cell !== null && cell !== undefined) filled = true;
+    }
+    if (!filled) continue;
+    var v = row[c - 1];
+    if (v instanceof Date && !isNaN(v)) {
+      var ms = v.getTime();
+      if (bestT === null || ms < bestT) bestT = ms;
+    } else if (v !== '' && v !== null && v !== undefined) {
+      var d0 = iso_(v, v);
+      if (d0 && (!best || d0 < best)) best = d0;
+    }
+  }
+  if (bestT !== null) {
+    var iso = isoOf_(new Date(bestT));
+    if (!best || iso < best) best = iso;
+  }
+  return best;
 }
 
 /** Values and display values in one pass, header row excluded. */
@@ -187,15 +322,15 @@ function body_(t) {
  * data it made a 30-day request almost twice as slow.
  */
 function bodyFrom_(t, fromIso) {
-  var last = t.sh.getLastRow();
+  var last = t.rows ? t.rows.length + 1 : t.sh.getLastRow();
   if (last < 2) return {values: [], display: [], first: 2};
 
   /* One read, not two. getValues() already gives everything we need: dates as
      Date objects, times as strings (the column is plain-text formatted), "Hi"
      as a string, numbers as numbers. getDisplayValues() was a second
      round-trip per sheet for nothing — and round-trips are what costs here. */
-  var rng = t.sh.getRange(2, 1, last - 1, t.lastCol);
-  var vals = rng.getValues(), disp = vals;
+  var vals = t.rows || t.sh.getRange(2, 1, last - 1, t.lastCol).getValues();
+  var disp = vals;
   if (!fromIso || !t.col['Дата']) return {values: vals, display: disp, first: 2};
 
   var c = t.col['Дата'] - 1, seen = '', start = vals.length;
@@ -209,9 +344,7 @@ function bodyFrom_(t, fromIso) {
 
 /** Cell date -> ISO yyyy-MM-dd, empty string when blank. */
 function iso_(value, shown, fallbackYear) {
-  if (value instanceof Date && !isNaN(value)) {
-    return Utilities.formatDate(value, tz_(), 'yyyy-MM-dd');
-  }
+  if (value instanceof Date && !isNaN(value)) return isoOf_(value);
   var s = String(shown == null ? value : shown).trim();
   if (!s) return '';
   var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -238,9 +371,7 @@ function dateOf_(isoStr) {
 
 /** Cell time -> 'HH:mm'. Sheets hands back times as dates in 1899. */
 function hhmm_(value, shown) {
-  if (value instanceof Date && !isNaN(value)) {
-    return Utilities.formatDate(value, tz_(), 'HH:mm');
-  }
+  if (value instanceof Date && !isNaN(value)) return hhmmOf_(value);
   var s = String(shown == null ? value : shown).trim();
   var m = s.match(/^(\d{1,2})[:.](\d{2})/);
   return m ? pad2_(+m[1]) + ':' + m[2] : '';
@@ -325,7 +456,10 @@ function renameSheets() {
  */
 function setupSheets() {
   var ss = ss_();
-  if (ss.getSpreadsheetTimeZone() !== TZ_NAME) ss.setSpreadsheetTimeZone(TZ_NAME);
+  if (ss.getSpreadsheetTimeZone() !== TZ_NAME) {
+    ss.setSpreadsheetTimeZone(TZ_NAME);
+    TZ_CACHE = ''; DAY_CACHE = {}; MIN_CACHE = {};
+  }
   checkTimeZone_();
   renameSheets();
 
@@ -781,13 +915,23 @@ function linkMeds_(meds, regimens, t) {
 }
 
 function readAll_(from) {
-  var mt = table_(S.meds);
+  var jt = readTable_(S.journal), ut = readTable_(S.urine),
+      dt = readTable_(S.day),     mt = readTable_(S.meds);
   var res = {
-    journal:  readJournal_(table_(S.journal), from),
-    urine:    readUrine_(table_(S.urine), from),
-    days:     readDay_(table_(S.day), from),
+    journal:  readJournal_(jt, from),
+    urine:    readUrine_(ut, from),
+    days:     readDay_(dt, from),
     meds:     readMeds_(mt, from),
-    regimens: readRegimens_(table_(S.regimens))   /* few rows, always all */
+    regimens: readRegimens_(readTable_(S.regimens)),  /* few rows, always all */
+    /* Колонки, за якими рядок вважається непорожнім, — ті самі, що вирішують,
+       чи потрапить він у відповідь взагалі. */
+    first: {
+      journal: firstDate_(jt, ['Час', 'Глюкоза', 'Інсулін, ОД', 'Корм',
+                               'Нотатка', 'Коментар лікаря']),
+      urine:   firstDate_(ut, ['Час', 'Мл', 'Нотатка']),
+      day:     firstDate_(dt, ['Стул', 'Нотатка']),
+      med:     firstDate_(mt, ['Препарат', 'Кількість', 'Нотатка'])
+    }
   };
   linkMeds_(res.meds, res.regimens, mt);
   return res;
@@ -846,7 +990,8 @@ function doGet(e) {
     var agg  = String(p.agg || '') === '1';
 
     var cache = CacheService.getScriptCache();
-    var ckey  = ['v' + dataVersion_(), from, to, agg ? 'a' : 'f'].join('|');
+    var ckey  = ['c' + CODE_VERSION, 'v' + dataVersion_(),
+                 from, to, agg ? 'a' : 'f'].join('|');
     var hit   = cache.get(ckey);
     if (hit) {
       var cached = JSON.parse(hit);
@@ -868,6 +1013,10 @@ function doGet(e) {
       days:     all.days.filter(function (r) { return inRange_(r.date, from, to); }),
       meds:     all.meds.filter(function (r) { return inRange_(r.date, from, to); }),
       regimens: all.regimens,
+      /* Найраніша дата в кожному аркуші: за нею застосунок точно знає, чи
+         лишилось що вантажити, замість того щоб здогадуватись по краю вікна. */
+      first:    all.first,
+      weight:   weight_(),
       stool:    STOOL,
       /* Адреси їдуть разом з даними, а не лежать у config.js: репозиторій
          публічний, а таблиця відкрита на редагування за посиланням. */
@@ -1137,6 +1286,15 @@ function doPost(e) {
   }
 
   if (roleOf_(body.k) !== 'edit') return json_({ok: false, error: 'forbidden'});
+
+  /* Налаштування не живуть в аркуші, тому й блокування таблиці їм не треба. */
+  if (body.action === 'weight') {
+    try {
+      return json_({ok: true, result: setWeight_(body.value)});
+    } catch (err) {
+      return json_({ok: false, error: String(err && err.message || err)});
+    }
+  }
 
   var kind = body.sheet;
   if (!WRITE[kind]) return json_({ok: false, error: 'unknown sheet: ' + kind});

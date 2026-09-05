@@ -147,6 +147,14 @@ const API = (function () {
     notify('failed', {count: 0});
   }
 
+  /* Вага не рядок у таблиці, тому йде повз чергу: одне значення, яке має або
+     записатись, або чесно повідомити, що не вийшло. */
+  async function setWeight(kg) {
+    const res = await send({action: 'weight', value: kg});
+    if (!res.ok) throw new Error(res.error || 'не вдалося зберегти');
+    return res;
+  }
+
   const create = (sheet, id, data, meds) => push(sheet, 'create', id, data, meds);
   const update = (sheet, id, data) => push(sheet, 'update', id, data);
   const remove = (sheet, id) => push(sheet, 'delete', id);
@@ -186,7 +194,7 @@ const API = (function () {
   window.addEventListener('online', flush);
 
   return {env, key, base, uid, on, load, offline, cachedAt, role, canWrite,
-          create, update, remove, flush, pending,
+          create, update, remove, flush, pending, setWeight,
           failed, retryFailed, dropFailed};
 })();
 
@@ -223,6 +231,7 @@ function adopt(payload) {
                 score: d.score}));
 
   days = payload.days || [];
+  if (payload.weight) serverWeight = payload.weight;
   sheetUrl = payload.sheetUrl || '';
   notionUrl = payload.notionUrl || '';
   loadedFrom = payload.from || '';
