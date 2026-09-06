@@ -10,7 +10,11 @@ const BANDS=[
   {max:20, color:'#E8C05A', name:'високо'},
   {max:1e9,color:'#E0873C', name:'дуже високо'}
 ];
-const C_INS='#5AA9E6', C_FOOD='#A78BE0', HI_COLOR='#E0873C';
+/* Ті самі значення, що --insulin, --food і колір верхньої смуги в styles.css.
+   Дублюються, бо svg малюється рядком і кольору зі змінної там не візьмеш.
+   Міняючи один — міняй обидва: колись синій уже розійшовся, і в графіках доза
+   лишалась старого відтінку, поки решта інтерфейсу вже була нового. */
+const C_INS='#67A9D9', C_FOOD='#A78BE0', HI_COLOR='#E0873C';
 const GAP_H=6;
 const CHEV=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
   stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`;          /* довша пауза — лінія рветься */
@@ -268,9 +272,10 @@ const icoOrder=chrono=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="no
  */
 function viewBar(tabs,attr,opt){
   opt=opt||{};
-  /* Легенду наповнює те подання, що малюється. Скидаємо тут, щоб у поданнях
-     без неї не лишалась чужа. */
+  /* Легенду і заголовки колонок наповнює те подання, що малюється. Скидаємо
+     тут, щоб у поданнях без них не лишались чужі. */
   viewLegend='';
+  setColHead('');
   const chrono=chronoNow();
   const t=tabs.map(([k,l,on])=>
     `<button class="vtab${on?' on':''}" ${attr}="${k}">${l}</button>`).join('');
@@ -288,7 +293,23 @@ function viewBar(tabs,attr,opt){
     `<div class="vtabs">${t}</div><div class="vacts">${acts}</div>`;
   bindOrder();bindHint();
 }
-const clearBar=()=>{document.getElementById('viewbar').innerHTML=''};
+const clearBar=()=>{
+  document.getElementById('viewbar').innerHTML='';
+  setColHead('');
+};
+
+/**
+ * Рядок заголовків колонок живе в тому ж липкому блоці, що шапка і смуга.
+ *
+ * Раніше він був усередині таблиці й липнув окремо, на виміряній висоті блоку.
+ * Через це три елементи мусили рухатись синхронно, а рухались вони різними
+ * способами — і між ними то відкривалась щілина, то заголовок зависав на
+ * старому місці. Тут рухати нема чого: блок один, зсувається як ціле.
+ */
+function setColHead(html){
+  const el=document.getElementById('colhead');
+  if(el)el.innerHTML=html||'';
+}
 function bindOrder(){
   document.querySelectorAll('[data-jo]').forEach(b=>
     b.onclick=()=>{chronoOrder=b.dataset.jo==='1';
@@ -339,9 +360,17 @@ const isList=()=>view==='glucose'||view==='urine'||
  * кінця, а не до початку.
  */
 let keepY=0, keepBottom=0;
+/* Куди нас поставило останнє приземлення. Потрібне, щоб зрозуміти, чи людина
+   встигла кудись відгорнутись, поки їхали свіжі дані. */
+let landedAt=null;
 function beginRender(){
   keepY=window.scrollY;
   keepBottom=document.documentElement.scrollHeight-window.scrollY;
+  /* Перемикання вкладки — не гортання. Якщо шапка була згорнута, вона має вже
+     бути на місці в новому вигляді, а не накочуватись на нього анімацією.
+     Тому на час малювання переходи вимкнені; при справжньому гортанні вони
+     лишаються — там цей клас ніхто не додає. */
+  document.body.classList.add('no-anim');
 }
 
 /**
@@ -349,30 +378,32 @@ function beginRender(){
  * хронологічному порядку, угорі при зворотному. Так буває при заході в розділ,
  * зміні подання і зміні сортування. Решта перемалювань лишає людину на місці.
  */
+/**
+ * Ставимо прокрутку **синхронно**, у тому ж кроці, що й малювання.
+ *
+ * Раніше це робив таймер — тобто вже після того, як браузер намалював кадр.
+ * Виходило видиме смикання: сторінка на мить показувалась згори, з шапкою, і
+ * аж потім стрибала вниз до найсвіжіших. Те саме повторювалось на кожному
+ * оновленні даних. Розмітка після `innerHTML` уже розкладена, а читання
+ * `scrollHeight` і так змушує браузер її порахувати — чекати на кадр не було
+ * потреби від початку.
+ */
 function afterRender(){
   const go=needScroll, y=keepY, fromEnd=keepBottom;
   needScroll=false;
-  /* Таймером, а не requestAnimationFrame: у невидимій чи пригальмованій
-     вкладці кадри не малюються, і тоді ні прокрутка не ставала на місце, ні
-     висота смуги не мірялась. Розмітка після innerHTML уже розкладена, тож
-     чекати на кадр тут нема чого. */
-  setTimeout(()=>{
-    const H=document.documentElement.scrollHeight;
-    if(go)window.scrollTo({top:isList()&&chronoNow()?H:0});
-    else window.scrollTo({top:isList()&&chronoNow()?Math.max(0,H-fromEnd):y});
-    if(window.rebaseHeader)window.rebaseHeader();
-    /* Заголовки таблиць липнуть під смугою подань, а її висота залежить від
-       того, що в ній стоїть. Тому міряємо, а не вписуємо число. */
-    const vb=document.getElementById('viewbar');
-    /* Округлюємо вниз, а не вгору. Висота смуги дробова, і при округленні
-       вгору заголовки колонок ставали на пів пікселя нижче за її край — рівно
-       та щілина, крізь яку просвічували рядки. Вниз означає, що заголовок
-       заходить під смугу на частку пікселя: смуга малюється поверх, і шва
-       не видно взагалі. */
-    const vh=vb&&vb.firstChild?Math.floor(vb.getBoundingClientRect().height):0;
-    document.body.style.setProperty('--viewbar-h',vh+'px');
-    updateJump();
-  },0);
+  const H=document.documentElement.scrollHeight;
+  if(go){
+    window.scrollTo({top:isList()&&chronoNow()?H:0});
+    landedAt=Math.round(window.scrollY);
+  }
+  else window.scrollTo({top:isList()&&chronoNow()?Math.max(0,H-fromEnd):y});
+  if(window.rebaseHeader)window.rebaseHeader();
+  updateJump();
+  /* Повертаємо переходи лише після того, як браузер порахував нове положення:
+     інакше зняття класу і зміна стану злипнуться в один крок, і перехід усе
+     одно програється. */
+  void document.documentElement.offsetHeight;
+  document.body.classList.remove('no-anim');
 }
 
 /* Найновіші — там, куди веде порядок: унизу при хронологічному, угорі при
@@ -422,9 +453,10 @@ function denseRows(){
       <span class="dx">${bits.join(', ')}</span></div>`;
     prevDate=e.date;
   });
-  return `<div class="dtable">
-    <div class="dr dh"><span class="dd">Дата</span><span class="dt">Час</span><span class="dg">Ммоль</span><span class="dx">Маніпуляції / нотатки</span></div>
-    ${out}</div>`;
+  setColHead(`<div class="dtable"><div class="dr dh">
+    <span class="dd">Дата</span><span class="dt">Час</span>
+    <span class="dg">Ммоль</span><span class="dx">Маніпуляції / нотатки</span></div></div>`);
+  return `<div class="dtable">${out}</div>`;
 }
 
 /* Старіше — там, куди гортаєш за старішим: угорі при хронологічному порядку
@@ -682,7 +714,7 @@ function bandsLegend(){
     return `<span><i style="background:${b.color}"></i>${label}</span>`;
   }).join('');
   return `<div class="bands">${items}
-    <span><i style="background:#191A1D;box-shadow:inset 0 0 0 1px var(--hairline)"></i>без заміру</span></div>`;
+    <span><i style="background:var(--card-night);box-shadow:inset 0 0 0 1px var(--hairline)"></i>без заміру</span></div>`;
 }
 
 
@@ -768,9 +800,9 @@ function rowsView(){
   const rows=list.map(r=>`<div class="trow">
     <div class="dcell"><b>${dateShort(r.date)}</b></div>
     ${cellA(r.am)}${cellA(r.pm)}</div>`).join('');
-  return `<div class="thead"><div class="trow hd"><div>Доба</div><div>Ранок</div>
-      <div>Вечір</div></div></div>
-    <div class="tbl">${rows}</div>`;
+  setColHead(`<div class="thead"><div class="trow hd"><div>Доба</div>
+    <div>Ранок</div><div>Вечір</div></div></div>`);
+  return `<div class="tbl">${rows}</div>`;
 }
 
 /* ---- 3. тренд передукольних ----
@@ -1166,6 +1198,8 @@ function urineDaysView(){
   if(!list.length)return '<div class="empty">Записів ще немає.</div>';
   const full=list.filter(d=>d!==TODAY&&mlOn(d)>0);
   const avg=full.length?full.reduce((s,d)=>s+rateOn(d),0)/full.length:null;
+  setColHead(`<div class="thead"><div class="urow hd"><div>Доба</div>
+    <div>Стул</div><div>Сеча</div><div>мл/кг/год</div></div></div>`);
   const rows=list.map(date=>{
     const ml=mlOn(date), st=stoolOn(date), today=date===TODAY;
     const r=ml?rateOn(date):null;
@@ -1188,8 +1222,6 @@ function urineDaysView(){
       plural(full.length,'повну добу','повні доби','повних діб')} в середньому
       <b>${rate1(avg)}</b> мл/кг/год. `:''}Вага для розрахунку —
       <button class="wbtn" data-w>${kgText()} кг</button>.</div>
-    <div class="thead"><div class="urow hd"><div>Доба</div><div>Стул</div>
-      <div>Сеча</div><div>мл/кг/год</div></div></div>
     <div class="tbl">${rows}</div>`;
 }
 
@@ -1818,29 +1850,45 @@ function updateNow(){
     ? `${top.time} · <b>${top.hi?'Hi':fmt(top.glucose)}</b>` : '';
 }
 
-/* Ховаємо шапку тільки коли справді гортаємо вниз і вже відійшли від верху,
-   щоб вона не сіпалась від інерції на дрібних рухах. */
+/**
+ * Ховаємо шапку, коли гортають униз, і повертаємо, коли вгору.
+ *
+ * Рішення приймається не за окремим кадром, а за накопиченим рухом в один бік:
+ * шість пікселів за кадр — це тремтіння пальця, і на такому порозі блок
+ * перекидався туди-сюди. Поки заголовки колонок жили окремо, це було не дуже
+ * помітно; тепер вони їдуть разом з блоком, стоять упритул до даних — і кожне
+ * таке перекидання видно як смикання. Тому напрямок має набрати THRESH
+ * пікселів, і лише тоді щось міняється.
+ */
 (function(){
-  let last=0, ticking=false;
+  const THRESH=30;
+  let last=0, acc=0;
   /* Програмна прокрутка (стрибок до найсвіжіших, зміна порядку) виглядає для
-     цього обробника як різкий рух пальцем униз, і він ховає шапку. Тому після
-     кожного такого стрибка перезадаємо точку відліку. */
+     цього обробника як різкий рух пальцем униз. Тому після кожного такого
+     стрибка перезадаємо і точку відліку, і накопичувач. */
   window.rebaseHeader=()=>{
     last=Math.max(0,window.scrollY);
+    acc=0;
     document.body.classList.remove('hh');
   };
   const apply=()=>{
     const y=Math.max(0,window.scrollY);
     const dy=y-last;
-    if(y<80) document.body.classList.remove('hh');
-    else if(dy>6) document.body.classList.add('hh');
-    else if(dy<-6) document.body.classList.remove('hh');
-    last=y; ticking=false;
+    last=y;
+    /* Біля верху шапка є завжди: там її ховати нема від чого. */
+    if(y<80){acc=0;document.body.classList.remove('hh');updateJump();return}
+    /* Зміна напрямку обнуляє накопичене, інакше довге гортання вниз лишало б
+       такий запас, що зворотний рух не спрацював би одразу. */
+    if((dy>0)!==(acc>0))acc=0;
+    acc+=dy;
+    if(acc>THRESH){document.body.classList.add('hh');acc=0}
+    else if(acc<-THRESH){document.body.classList.remove('hh');acc=0}
     updateJump();
   };
-  window.addEventListener('scroll',()=>{
-    if(!ticking){ticking=true;requestAnimationFrame(apply)}
-  },{passive:true});
+  /* Без requestAnimationFrame: у невидимій чи пригальмованій вкладці кадри не
+     малюються, і обробник просто не спрацьовував би. Тут рахувати нема чого —
+     читання scrollY і перемикання класу, — тож дросель був зайвий. */
+  window.addEventListener('scroll',apply,{passive:true});
 })();
 
 /* ────────────────────────────── старт ────────────────────────────── */
@@ -1912,9 +1960,12 @@ function show(data){
   markAllLoaded(data);
   document.body.classList.toggle('ro',!API.canWrite());
   /* Малювань при старті два: із кешу і зі свіжих даних за кілька секунд.
-     Обидва стають на найсвіжіші — інакше друге лишало б там, куди приїхало
-     перше, а даних за цей час могло прибавитись. Далі вже нікуди не тягнемо. */
-  if(paints<2){ needScroll=true; paints++; }
+     Друге теж має стати на найсвіжіші — за ці секунди даних могло прибавитись.
+     Але лише якщо людина за цей час нікуди не відгорнулась: інакше свіжі дані
+     висмикували б її з місця саме тоді, коли вона почала читати. */
+  const stayed=landedAt==null||Math.abs(window.scrollY-landedAt)<4;
+  if(paints<2&&stayed)needScroll=true;
+  if(paints<2)paints++;
   setView(view);
 }
 

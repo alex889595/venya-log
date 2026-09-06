@@ -32,10 +32,14 @@
 
   --f-display:'Gentium Plus',serif;
   --f-body:'IBM Plex Sans',system-ui,sans-serif;
-  --head-h:64px;
+  --head-h:50px;
   --bar-h:51px;
   --fab-r:27px;         /* радіус кнопки запису */
-  --viewbar-h:0px;      /* measured after every render, see afterRender() */
+  /* Висота смуги подань. На телефоні вона нікому не потрібна: смуга лежить в
+     одному липкому блоці з рештою хрому. Знадобилась лише на десктопі, де цей
+     блок розпадається на елементи сітки і заголовкам колонок треба знати, під
+     чим липнути. Значення стале — кегль і відступи табів фіксовані. */
+  --viewbar-h:47px;
   --pad:14px;
 }
 *{margin:0;padding:0;box-sizing:border-box}
@@ -44,15 +48,37 @@ body{background:#101010;color:var(--text);font-family:var(--f-body);
   -webkit-font-smoothing:antialiased;display:flex;justify-content:center}
 .app{width:100%;max-width:480px;background:var(--bg);min-height:100vh}
 
-/* Шапка не липка: фото та ім'я потрібні раз, коли відкриваєш. Липкою лишається
-   смуга подань — те, чим справді користуються посеред списку. */
-header{height:var(--head-h);display:flex;align-items:center;
-  background:var(--chrome)}
+/**
+ * Шапка і смуга подань — один липкий блок, який рухається як ціле.
+ *
+ * Липкий він тому, що більшість розділів відкривається на найсвіжіших записах,
+ * тобто внизу списку: шапка в потоці означала б, що при кожному заході її
+ * прокручує геть — її не видно ніколи, зате видно ривок, а кожен перехід між
+ * списком і графіком зсував би весь зміст на її висоту.
+ *
+ * А один блок, а не два — тому що два рухались нарізно: шапка їхала
+ * трансформацією, смуга міняла власний відступ, і між ними на час анімації
+ * відкривалась щілина, крізь яку просвічувала таблиця. Тут ховати шапку —
+ * це зсунути весь блок на її висоту: смуга сама опиняється вгорі, а фон
+ * блоку накриває обидва поверхи, тому розійтись їм нема як.
+ */
+.headwrap{position:sticky;top:0;z-index:40;background:var(--chrome);
+  transition:transform .22s ease}
+body.hh .headwrap{transform:translateY(calc(-1 * var(--head-h)))}
+body.shot.hh .headwrap{transform:translateY(-100%)}
+@media(prefers-reduced-motion:reduce){.headwrap{transition:none}}
+body.no-anim .headwrap{transition:none}
+/* Заголовки колонок — третій поверх того самого блоку. Свого липкого відступу
+   не мають і мати не можуть: усе, що всередині блоку, рухається разом з ним. */
+.colhead:empty{display:none}
+.colhead .dtable{margin:0 var(--pad);padding-bottom:2px}
+.colhead .thead{margin:0 var(--pad)}
+header{height:var(--head-h);display:flex;align-items:center}
 .brand{flex:1;display:flex;align-items:center;gap:11px;padding:0 var(--pad)}
 /* The photo is a background, not an <img>: if the file is not there the circle
    is simply green — the same green the photo is shot on — instead of a broken
    image icon in the header of every screen. */
-.ava{width:42px;height:42px;flex:0 0 auto;border-radius:50%;
+.ava{width:38px;height:38px;flex:0 0 auto;border-radius:50%;
   background:var(--sage) url("venya.jpg") center/cover no-repeat}
 /* Inline layout, not flex: the two-line label has to sit on the same baseline
    as the name, and an inline-block takes the baseline of its LAST line — which
@@ -87,9 +113,8 @@ main{padding:12px 0 96px}
 
 /* Смуга подань: таби ліворуч, керування праворуч, того ж тону, що й шапка.
    Між ними немає лінії навмисно — над даними це один світліший шар. */
-.viewbar{position:sticky;top:0;z-index:39;display:flex;align-items:center;
-  gap:8px;padding:0 10px 0 var(--pad);background:var(--chrome);
-  transition:transform .22s ease}
+.viewbar{display:flex;align-items:center;gap:8px;
+  padding:0 10px 0 var(--pad)}
 .vtabs{display:flex;gap:11px;flex:1;min-width:0;overflow-x:auto;
   scrollbar-width:none}
 .vtabs::-webkit-scrollbar{display:none}
@@ -101,12 +126,7 @@ main{padding:12px 0 96px}
 .vacts .ordbtn{padding:6px;border-radius:10px}
 .vacts .ordbtn svg{width:15px;height:15px}
 .viewbar:empty{display:none}
-/* Смуга поїхала вгору — заголовки колонок мають стати на її місце, інакше
-   вони зависають на старій висоті і під ними світиться діра. */
-body.shot.hh .dr.dh,body.shot.hh .thead{top:0}
-/* Режим скріна ховає смугу при гортанні вниз: у кадр має потрапити тільки те,
-   що є даними. */
-body.shot.hh .viewbar{transform:translateY(-100%)}
+
 .legend{display:flex;flex-wrap:wrap;gap:9px 16px;padding:0 0 18px}
 .legend span{font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px}
 .legend b{font-size:11px;color:var(--faint);font-weight:500}
@@ -205,8 +225,11 @@ body.shot.hh .viewbar{transform:translateY(-100%)}
    its rounded corners. Out here it can pin under the bar — and when the bar
    hides on scroll it takes the top spot, which is the only moment the header is
    really needed. */
-.thead{position:sticky;top:var(--viewbar-h);z-index:20;
-  margin:0 var(--pad);background:var(--bg)}
+/* Відступ міняється миттєво, але з різною затримкою.
+   Угору — одразу: блок ще накриває це місце собою, тому переставляння не видно.
+   Назад — після того, як блок доїхав: інакше на час анімації між ним і
+   заголовком світилася б смужка рядків. */
+.thead{margin:0 var(--pad)}
 .thead .trow,.thead .urow{border:0}
 .trow{display:grid;grid-template-columns:52px minmax(0,1fr) minmax(0,1fr);
   align-items:stretch;cursor:default}
@@ -391,7 +414,7 @@ body.shot.hh .viewbar{transform:translateY(-100%)}
 .dx{flex:1 1 auto}
 .dr:nth-child(even){background:rgba(255,255,255,.022)}
 .dr.d0{border-top:1px solid var(--hairline)}
-.dr.dh{position:sticky;top:var(--viewbar-h);background:var(--bg);border:0;cursor:default;
+.dr.dh{border:0;cursor:default;
   font-size:9px;letter-spacing:.03em;text-transform:uppercase;color:var(--faint);
   padding-top:8px;padding-bottom:7px;z-index:2;
   box-shadow:0 1px 0 var(--hairline);transition:top .22s}
@@ -703,12 +726,21 @@ body.shot .dr[data-edit]{cursor:pointer}
      належить середній колонці, а не всій ширині. */
   .app{max-width:1240px;
     grid-template-columns:190px minmax(0,1fr) 330px;
-    grid-template-rows:auto auto 1fr}
-  header{grid-column:1/-1;grid-row:1}
-  .viewbar{grid-column:2;grid-row:2;top:0}
+    grid-template-rows:auto auto auto 1fr}
+  /* На десктопі шапка на всю ширину, а смуга подань — лише над змістом, тому
+     обгортка розпускається і діти знову стають елементами сітки. */
+  .headwrap{display:contents}
+  header{position:sticky;top:0;z-index:40;background:var(--chrome);
+    grid-column:1/-1;grid-row:1}
+  /* Липне під шапкою, а не поверх неї: на десктопі шапка теж лишається на
+     місці, і обидві на нулі просто накривали одна одну. */
+  .viewbar{position:sticky;top:var(--head-h);z-index:39;background:var(--chrome);
+    grid-column:2;grid-row:2}
+  .colhead{position:sticky;top:calc(var(--head-h) + var(--viewbar-h));z-index:38;
+    background:var(--chrome);grid-column:2;grid-row:3}
 
   .tabbar{position:sticky;top:calc(var(--head-h) + 18px);z-index:39;
-    grid-column:1;grid-row:2/4;
+    grid-column:1;grid-row:2/5;
     width:auto;max-width:none;left:auto;bottom:auto;transform:none;
     display:flex;flex-direction:column;align-items:stretch;gap:3px;
     padding:18px 12px;background:transparent;backdrop-filter:none;
@@ -725,12 +757,13 @@ body.shot .dr[data-edit]{cursor:pointer}
     justify-content:flex-start;box-shadow:none}
   .tabbar .fab::after{content:"Запис";font-size:13.5px;margin-left:9px}
 
-  main{grid-column:2;grid-row:3;padding-bottom:56px}
-  .side{grid-column:3;grid-row:2/4;min-width:0}
+  main{grid-column:2;grid-row:4;padding-bottom:56px}
+  .side{grid-column:3;grid-row:2/5;min-width:0}
 
   /* the header does not hide on desktop: there is room, and the jumps annoy */
-  /* Nothing hides on desktop, so nothing has to slide back either. */
-  body.hh .viewbar,body.shot.hh .tabbar{transform:none}
+  /* Нічого не ховається на десктопі: місця досить, а стрибки дратують. */
+  body.hh .headwrap{transform:none}
+  body.shot.hh .tabbar{transform:none}
 
   .jump{bottom:26px;right:calc(50% - 620px + var(--pad))}
   .banner{bottom:0;left:50%;transform:translateX(-50%);max-width:1240px}
