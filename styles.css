@@ -69,7 +69,12 @@ body.shot.hh .headwrap{transform:translateY(-100%)}
 @media(prefers-reduced-motion:reduce){.headwrap{transition:none}}
 body.no-anim .headwrap{transition:none}
 /* Заголовки колонок — третій поверх того самого блоку. Свого липкого відступу
-   не мають і мати не можуть: усе, що всередині блоку, рухається разом з ним. */
+   не мають і мати не можуть: усе, що всередині блоку, рухається разом з ним.
+
+   Фон у них не хромовий, а той самий, що в полотна: вони належать таблиці, а не
+   керуванню. На спільному тоні з шапкою рядок зливався з нею в одну пляму —
+   а межа тут та сама, що й скрізь у застосунку: не лінія, а зміна тону. */
+.colhead{background:var(--bg)}
 .colhead:empty{display:none}
 .colhead .dtable{margin:0 var(--pad);padding-bottom:2px}
 .colhead .thead{margin:0 var(--pad)}
