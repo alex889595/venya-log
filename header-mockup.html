@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Веня — макети шапки</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+/* ── стенд ──────────────────────────────────────────────────────────────
+   Перемикач варіантів живе ВНИЗУ навмисно: угорі він став би ще одним рівнем
+   у шапці — рівно тим, що ми тут і намагаємось порахувати. */
+.pick{position:fixed;left:50%;transform:translateX(-50%);bottom:14px;z-index:200;
+  display:flex;gap:4px;align-items:center;padding:6px 7px;border-radius:99px;
+  background:#0B0B0B;border:1px solid var(--hairline);
+  box-shadow:0 10px 30px rgba(0,0,0,.6);font-family:var(--f-body)}
+.pick button{background:none;border:0;color:var(--muted);border-radius:99px;
+  padding:8px 12px;font-family:inherit;font-size:12.5px;cursor:pointer;
+  white-space:nowrap}
+.pick button.on{background:var(--sage);color:#181A10;font-weight:600}
+.pick .sec{color:var(--text);padding:8px 13px;border:1px solid var(--hairline)}
+.pick .sep{width:1px;height:20px;background:var(--hairline);margin:0 3px}
+main{padding-bottom:104px}
+
+/* Підпис варіанта — частина стенда, гортається разом зі змістом. */
+.note-card{margin:0 var(--pad) 16px;padding:13px 15px;border-radius:14px;
+  background:#101010;border:1px dashed var(--hairline);
+  font-size:12.5px;line-height:1.6;color:var(--muted)}
+.note-card b{color:var(--text);font-weight:600;display:block;margin-bottom:4px}
+.note-card .num{display:block;margin-top:8px;color:var(--sage);
+  font-variant-numeric:tabular-nums;font-size:11.5px}
+
+/* Липкі заголовки таблиць рахуємо від виміряної висоти хрому, а не від
+   констант застосунку: у кожного варіанта вона своя. */
+#app .dr.dh,#app .thead{top:var(--chrome-h,0px)}
+
+/* ── В2: тон замість ліній ─────────────────────────────────────────── */
+.v2-head{position:sticky;top:0;z-index:40;background:var(--panel);padding:10px 0 0}
+.v2-head .brand{padding:0 var(--pad) 2px}
+.v2-head .seg-top{margin:12px var(--pad) 0;background:transparent;border:0;
+  padding:0;gap:0}
+.v2-head .seg-top button{padding:8px 0;margin-right:17px;flex:0 0 auto;
+  border-radius:0;font-size:13px}
+.v2-head .seg-top button.on{background:transparent;color:var(--text);
+  box-shadow:inset 0 -2px 0 var(--sage)}
+.v2-head .jrow{padding:6px var(--pad) 12px}
+.v2-cols{display:flex;gap:5px;padding:14px 6px 5px;margin:0;font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.v2-cols .dd{flex:0 0 42px}.v2-cols .dt{flex:0 0 40px}.v2-cols .dg{flex:0 0 46px}
+.v2-thead{margin:14px var(--pad) 0}
+.v2-thead .trow{border:0}
+.v2-thead .trow div{padding-bottom:6px}
+
+/* ── В3: рядок розділу з великим заголовком ────────────────────────── */
+.v3-head{position:sticky;top:0;z-index:40;
+  background:rgba(24,24,24,.94);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--hairline)}
+.v3-id{display:flex;align-items:center;gap:10px;padding:9px var(--pad) 0}
+.v3-id .ava{width:30px;height:30px}
+.v3-id h1{font-size:17px}
+.v3-id .now{margin-left:auto}
+.v3-row{display:flex;align-items:center;gap:10px;padding:2px var(--pad) 11px}
+.v3-title{font-family:var(--f-display);font-size:25px;font-weight:500;
+  display:flex;align-items:center;gap:6px;color:var(--text);
+  background:none;border:0;padding:0;cursor:pointer}
+.v3-title .chev{color:var(--faint);display:inline-flex}
+.v3-acts{margin-left:auto;display:flex;gap:7px}
+
+/* ── В4: шапка гортається, лишається смуга розділу ─────────────────── */
+.v4-id{display:flex;align-items:center;gap:11px;padding:14px var(--pad) 16px}
+.v4-bar{position:sticky;top:0;z-index:40;
+  background:rgba(24,24,24,.94);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--hairline)}
+.v4-line{display:flex;align-items:center;gap:8px;padding:10px var(--pad) 9px}
+.v4-name{font-family:var(--f-display);font-size:19px;font-weight:500;
+  background:none;border:0;padding:0;color:var(--text);cursor:pointer;
+  display:flex;align-items:center;gap:4px;white-space:nowrap}
+.v4-name .chev{color:var(--faint);display:inline-flex}
+.v4-now{margin-left:auto;font-size:12px;color:var(--muted);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.v4-now b{color:var(--text);font-weight:600}
+.v4-cols{display:flex;gap:5px;margin:0 var(--pad);padding:0 6px 7px;font-size:9px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.v4-cols .dd{flex:0 0 42px}.v4-cols .dt{flex:0 0 40px}.v4-cols .dg{flex:0 0 46px}
+.v4-cols2{display:grid;grid-template-columns:52px minmax(0,1fr) minmax(0,1fr);
+  margin:0 var(--pad);padding:0 0 8px 11px;font-size:9px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<div class="pick" id="pick">
+  <button class="sec" id="sec">журнал</button>
+  <span class="sep"></span>
+  <button data-v="1">1</button>
+  <button data-v="2">2</button>
+  <button data-v="3">3</button>
+  <button data-v="4">4</button>
+</div>
+
+<script>
+/* Дані вигадані: макет про шапку, а не про цифри. */
+const LOG=[
+  ['28.08','00:30','9,4','#ADBF78',''],
+  ['','02:00','7,8','#ADBF78',''],
+  ['','04:00','6,9','#ADBF78','корм вологий 12 г'],
+  ['','10:00','24,7','#E0873C','<b class="ins">0,5 ОД</b>, корм вологий 85 г, Псиліум'],
+  ['','14:00','5,9','#ADBF78',''],
+  ['','16:00','5,0','#ADBF78','корм вологий 12 г'],
+  ['','17:00','6,4','#ADBF78',''],
+  ['','20:50','30,0','#E0873C',''],
+  ['','22:00','32,7','#E0873C','<b class="ins">0,5 ОД</b>, корм вологий 85 г, Псиліум'],
+  ['29.08','02:00','10,3','#ADBF78',''],
+  ['','04:00','7,3','#ADBF78',''],
+  ['','10:00','6,8','#ADBF78','корм вологий 50 г'],
+  ['','10:45','7,3','#ADBF78','<b class="ins">0,25 ОД</b>, корм вологий 50 г, Псиліум'],
+  ['','11:45','7,8','#ADBF78',''],
+  ['','12:45','6,8','#ADBF78',''],
+  ['','13:45','7,6','#ADBF78',''],
+  ['','14:45','7,7','#ADBF78',''],
+  ['','16:45','7,8','#ADBF78',''],
+  ['','20:00','7,7','#ADBF78',''],
+  ['','22:45','9,8','#ADBF78','<b class="ins">0,25 ОД</b>, корм вологий 70 г, Псиліум'],
+  ['30.08','02:45','4,7','#E0504F','корм вологий 18 г'],
+  ['','03:45','5,1','#ADBF78',''],
+  ['31.08','22:30','14,2','#ADBF78','<b class="ins">0,25 ОД</b>, корм вологий 70 г']
+];
+
+const DAYS=[
+  ['20.08','25,9','#E0873C','21:30','0,75','10,5','#ADBF78','+4','18,5','#E8C05A','09:30','0,5','9,9','#ADBF78','+3'],
+  ['21.08','18,4','#E8C05A','21:30','0,6','8,3','#ADBF78','+4','11,0','#ADBF78','09:30','0,5','3,8','#E0504F','+3'],
+  ['22.08','31,0','#E0873C','21:30','0,75','10,4','#ADBF78','+4','14,3','#ADBF78','09:30','0,5','8,3','#ADBF78','+4'],
+  ['23.08','26,6','#E0873C','21:30','0,75','4,8','#E0504F','+4','12,2','#ADBF78','10:20','0,5','8,0','#ADBF78','+2'],
+  ['24.08','Hi','#E0873C','22:00','0,5','13,4','#ADBF78','+2','16,3','#E8C05A','10:00','0,5','4,7','#E0504F','+4'],
+  ['25.08','29,7','#E0873C','22:00','0,5','13,3','#ADBF78','+4','25,0','#E0873C','10:00','0,5','6,4','#ADBF78','+4'],
+  ['26.08','31,6','#E0873C','22:00','0,5','15,8','#E0873C','+4','17,7','#E8C05A','10:00','0,5','7,7','#ADBF78','+6'],
+  ['27.08','12,7','#ADBF78','22:00','0,5','6,9','#ADBF78','+6','24,7','#E0873C','10:00','0,5','5,0','#ADBF78','+6'],
+  ['28.08','32,7','#E0873C','22:00','0,5','6,8','#ADBF78','+12','7,3','#ADBF78','10:45','0,25','6,8','#ADBF78','+2'],
+  ['29.08','9,8','#ADBF78','22:45','0,25','4,7','#E0504F','+4','','','','','','',''],
+  ['31.08','14,2','#ADBF78','22:30','0,25','','','','','','','','','','']
+];
+
+const logRows=()=>LOG.map(([d,t,g,c,x])=>
+  `<div class="dr${d?' d0':''}"><span class="dd">${d}</span><span class="dt">${t}</span>
+   <span class="dg" style="color:${c}">${g}</span><span class="dx">${x}</span></div>`).join('');
+
+const cell=(v,c,tm,dose,n,nc,lag)=>!v
+  ? '<div class="cell2"><span class="dash">—</span></div>'
+  : `<div class="cell2"><div class="cell2-row1">
+      <span class="v1" style="color:${c}">${v}</span><span class="t1">(${tm})</span>
+      <span class="dose-dot"><i></i>${dose}</span></div>
+     <div class="cell2-row2">${n
+       ? `<span class="v2" style="color:${nc}">${n}</span><span class="t2">(${lag} год)</span>`
+       : '<span class="dash">триває</span>'}</div></div>`;
+
+const dayRows=()=>DAYS.map(r=>`<div class="trow">
+    <div class="dcell"><b>${r[0]}</b></div>
+    ${cell(r[1],r[2],r[3],r[4],r[5],r[6],r[7])}
+    ${cell(r[8],r[9],r[10],r[11],r[12],r[13],r[14]).replace('cell2"','cell2 pm"')}
+  </div>`).join('');
+
+const COLS=`<span class="dd">Дата</span><span class="dt">Час</span>
+  <span class="dg">Ммоль</span><span class="dx">Маніпуляції / нотатки</span>`;
+const COLS2=`<div>Доба</div><div>Ранок</div><div>Вечір</div>`;
+
+const ICO={
+  sort:`<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>`,
+  eye:`<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/>
+    <circle cx="12" cy="12" r="3.2"/></svg>`,
+  chev:`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>`
+};
+
+const BRAND=`<div class="brand">
+  <div class="ava" role="img" aria-label="Веня"></div>
+  <h1>Веня<i class="slash" aria-hidden="true">/</i><em>діабет<br>відмітки</em></h1>
+  <div class="now">22:30 · <b>14,2</b></div>
+</div>`;
+
+/* Розділ: у журналі подань немає, у зведенні їх чотири — саме там шарів
+   найбільше, тому дивитись треба обидва. */
+let sec='log';
+const isLog=()=>sec==='log';
+const title=()=>isLog()?'Журнал':'По добах';
+const seg=cls=>isLog()?'':`<div class="seg-top${cls?' '+cls:''}">
+  <button>Картками</button><button class="on">По добах</button>
+  <button>Динаміка</button><button>Крива</button></div>`;
+const acts=`<button class="ordbtn">${ICO.sort} старіше зверху</button>
+  <button class="ordbtn icon">${ICO.eye}</button>`;
+const actsIcons=`<button class="ordbtn icon">${ICO.sort}</button>
+  <button class="ordbtn icon">${ICO.eye}</button>`;
+const table=()=>isLog()
+  ? `<div class="dtable"><div class="dr dh">${COLS}</div>${logRows()}</div>`
+  : `<div class="thead"><div class="trow hd">${COLS2}</div></div>
+     <div class="tbl">${dayRows()}</div>`;
+const tableBare=()=>isLog()
+  ? `<div class="dtable">${logRows()}</div>`
+  : `<div class="tbl">${dayRows()}</div>`;
+
+const NOTE=(t,b)=>`<div class="note-card"><b>${t}</b>${b}<span class="num" id="num"></span></div>`;
+
+/* ── варіанти ─────────────────────────────────────────────────────── */
+const V={};
+
+V[1]=()=>`
+  <header>${BRAND}</header>
+  <main>
+    ${seg()}
+    <div class="jbar">${acts}</div>
+    ${NOTE('1 · Як зараз', 'У зведенні три липкі шари поспіль: шапка, смуга подань з керуванням, заголовки колонок. Усі три однакової ваги і розділені однаковими лініями, тому жодна з них не каже, що головніше.')}
+    ${table()}
+  </main>`;
+
+V[2]=()=>`
+  <div class="v2-head">
+    ${BRAND}
+    ${seg()}
+    <div class="jrow">${acts}</div>
+  </div>
+  <main>
+    ${NOTE('2 · Тон замість ліній', 'Жодної горизонтальної лінії. Шапка, подання і керування — один світліший блок, дані — темніший; межа читається з тону. Заголовки колонок не липкі, просто дрібним над таблицею. Висота та сама, що зараз, — виправлено не її, а розшарування.')}
+    ${isLog()
+      ? `<div class="dtable"><div class="v2-cols">${COLS}</div>${logRows()}</div>`
+      : `<div class="v2-thead"><div class="trow hd">${COLS2}</div></div>
+         <div class="tbl">${dayRows()}</div>`}
+  </main>`;
+
+V[3]=()=>`
+  <div class="v3-head">
+    <div class="v3-id">
+      <div class="ava" role="img" aria-label="Веня"></div>
+      <h1>Веня<i class="slash" aria-hidden="true">/</i><em>діабет<br>відмітки</em></h1>
+      <div class="now">22:30 · <b>14,2</b></div>
+    </div>
+    <div class="v3-row">
+      <button class="v3-title">${title()} <span class="chev">${ICO.chev}</span></button>
+      <div class="v3-acts">${actsIcons}</div>
+    </div>
+  </div>
+  <main>
+    ${NOTE('3 · Заголовок розділу замість смуги', 'Перемикач подань згорнутий у назву з галочкою: тап відкриває список із чотирьох. Керування — іконками в тому ж рядку. Смуг лишається дві, і між ними є різниця у вазі: ім’я дрібне і службове, назва подання — головна.')}
+    ${table()}
+  </main>`;
+
+V[4]=()=>`
+  <div class="v4-id">
+    <div class="ava" role="img" aria-label="Веня"></div>
+    <h1>Веня<i class="slash" aria-hidden="true">/</i><em>діабет<br>відмітки</em></h1>
+  </div>
+  <div class="v4-bar">
+    <div class="v4-line">
+      <button class="v4-name">${title()} <span class="chev">${ICO.chev}</span></button>
+      ${actsIcons}
+      <span class="v4-now">22:30 · <b>14,2</b></span>
+    </div>
+    ${isLog()?`<div class="v4-cols">${COLS}</div>`:`<div class="v4-cols2">${COLS2}</div>`}
+  </div>
+  <main>
+    ${NOTE('4 · Шапка гортається, лишається один рядок', 'Фото та ім’я не липкі — вони потрібні раз, коли відкриваєш. Липке тільки те, що працює: назва подання, керування, поточний показник і заголовки колонок. Один шар замість трьох.')}
+    ${tableBare()}
+  </main>`;
+
+let cur=1;
+function draw(){
+  document.getElementById('app').innerHTML=V[cur]();
+  document.querySelectorAll('#pick [data-v]').forEach(b=>
+    b.classList.toggle('on',+b.dataset.v===cur));
+  document.getElementById('sec').textContent=isLog()?'журнал':'зведення';
+  measure();
+  /* Ще раз, коли дійдуть шрифти: висота смуг залежить від них. Таймером, а не
+     requestAnimationFrame: у фоновій вкладці кадри не малюються, і стенд
+     лишався б без чисел. */
+  setTimeout(measure,120);
+  window.scrollTo(0,0);
+}
+
+/* Два числа, за якими варіанти й порівнюються, — саме те, на що скарга:
+   скільки екрана хром забирає назавжди і на скільки шарів він поділений. */
+function measure(){
+  const stuck=[...document.querySelectorAll('#app *')].filter(el=>
+    getComputedStyle(el).position==='sticky');
+  const h=Math.round(stuck.reduce((s,el)=>s+el.getBoundingClientRect().height,0));
+  document.body.style.setProperty('--chrome-h',h+'px');
+  const n=document.getElementById('num');
+  if(n)n.textContent='липке '+h+' px · шарів '+stuck.length;
+}
+document.querySelectorAll('#pick [data-v]').forEach(b=>
+  b.onclick=()=>{cur=+b.dataset.v;draw()});
+document.getElementById('sec').onclick=()=>{sec=isLog()?'sum':'log';draw()};
+draw();
+</script>
+</body>
+</html>
