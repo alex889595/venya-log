@@ -95,18 +95,31 @@ const API = (function () {
     sending = true;
     try {
       while (queue().length) {
-        const q = queue();
-        const res = await send(q[0]);
+        const op = queue()[0];
+        const res = await send(op);
         if (!res.ok && !res.fatal) break;          /* немає мережі — чекаємо */
         if (!res.ok) {
           const f = failed();
-          f.push({op: q[0], error: res.error, at: Date.now()});
+          f.push({op: op, error: res.error, at: Date.now()});
           setFailed(f);
-          notify('failed', {op: q[0], error: res.error, count: f.length});
+          notify('failed', {op: op, error: res.error, count: f.length});
         }
-        q.shift();
-        setQueue(q);
-        notify('queue', {pending: q.length});
+        /* Чергу перечитуємо після `await`, а не пишемо назад знімок, узятий до
+           нього. Поки летів запит, у чергу могли покласти нову операцію — і
+           знімок її не містив, тож запис назад її стирав.
+
+           Ловилось це на ліках, бо там дві операції кладуться в один крок:
+           збереження відмітки спершу відправляє сам запис, а слідом — кожні
+           позначені ліки. Друга операція лягала в чергу рівно тоді, коли
+           перша була в польоті, і зникала беззвучно: у «не відправлених» її
+           теж не було, бо ніхто її не відхиляв. На екрані ліки лишались до
+           першого перечитування даних, а в таблиці їх не було ніколи.
+
+           Знімати з голови безпечно: у чергу лише дописують у хвіст. */
+        const rest = queue();
+        rest.shift();
+        setQueue(rest);
+        notify('queue', {pending: rest.length});
       }
     } finally {
       sending = false;
