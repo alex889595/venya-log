@@ -128,7 +128,10 @@ main{padding:12px 0 96px}
   border-bottom:2px solid transparent;transition:color .15s}
 .vtab.on{color:var(--text);border-bottom-color:var(--sage)}
 .vacts{flex:0 0 auto;display:flex;gap:4px;padding:6px 0}
-.vacts .ordbtn{padding:6px;border-radius:10px}
+/* Той самий відступ, що в .ordbtn.icon нижче: у смузі поруч з іконками
+   стоїть і кнопка з текстом (вага), а висоту їм однаково рівняє розтяг
+   флексу — але горизонтально текст без відступу впирався б у рамку. */
+.vacts .ordbtn{padding:9px 10px;border-radius:10px}
 .vacts .ordbtn svg{width:15px;height:15px}
 .viewbar:empty{display:none}
 
@@ -683,6 +686,10 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
   position:absolute;left:50%;transform:translateX(-50%);
   top:calc(-1 * var(--fab-r))}
 .tabbar .fab svg{width:22px;height:22px;stroke-width:2.4}
+/* Підпис до «＋» набраний окремим елементом, а не псевдоелементом: на десктопі
+   кнопка стає звичайною парою «іконка + слово», і вирівняти їх по одній лінії
+   можна лише тоді, коли обидва — справжні діти флексу. */
+.tabbar .fab .fab-t{display:none}
 .tabbar button[data-view]:nth-child(1){grid-column:1}
 .tabbar button[data-view]:nth-child(2){grid-column:2}
 .tabbar button[data-view]:nth-child(4){grid-column:4}
@@ -723,53 +730,122 @@ body.shot .dr[data-edit]{cursor:pointer}
 
 /* ── desktop ──────────────────────────────────────────────────────────
    The bottom bar is a thumb-reach decision. A wide screen has room to spare, so
-   the same buttons become a left-hand column and the "+" rises above them as a
-   separate button. Same markup, only the layout changes — both modes stay one
-   piece of code. */
+   the same buttons move up into the header. Same markup, only the layout
+   changes — both modes stay one piece of code.
+
+   Колонкою ліворуч навігація вже стояла, і це було зайве: чотири розділи не
+   потребують власної колони, а колона забирала 190 пікселів у таблиці й
+   ставила порожнечу під собою на всю висоту сторінки.
+
+   Розділи в шапці, подання розділу — у смузі під нею. Тому вигляд у них
+   різний: угорі активний розділ підсвічений плашкою, унизу подання підкреслені
+   рискою. Два ряди підкреслень один під одним читались би як один зламаний.
+
+   ── Про ширини ──
+   Одна колонка, а не дві. Бічна панель заповнюється рівно в одному поданні
+   («Зведення / Картками»), а місце під себе просила на всіх — і на журналі це
+   була чорна третина екрана праворуч, під якою висіли кнопки шапки. Тепер
+   колона під неї з'являється тільки тоді, коли в ній щось є.
+
+   Ширина застосунку через це стала. Міняється не вона, а ділення всередині:
+   860 пікселів або цілком під зміст, або 1fr + 330 під панель. Шапка від
+   цього не рухається — а вона на екрані завжди.
+
+   І весь хром тепер однієї ширини: шапка і смуга подань ідуть від краю до
+   краю застосунку. Раніше смуга кінчалась на межі колонки зі змістом, а шапка
+   йшла далі — і на цьому місці в хромі був видимий уступ.
+
+   ── Чому 860, а не скільки влізе ──
+   Ширину задають таблиці, а не екран. У «По добах» доба ділиться на ранок і
+   вечір, і в кожній половині доза відсунута до правого краю комірки: на
+   півширини 1000-пікселевого макета між «22,9 (09:00)» і «• 2,0» лежала
+   порожнеча в пів-екрана, і рядок переставав читатись як рядок. У журналі те
+   саме робила колонка нотаток. 860 — це приблизно та ширина, яку таблиці мали
+   до всіх цих переїздів, і на ній вони читались. */
 @media(min-width:900px){
-  /* Три рядки, а не два: між шапкою і змістом стоїть смуга подань, і вона
-     належить середній колонці, а не всій ширині. */
-  .app{max-width:1240px;
-    grid-template-columns:190px minmax(0,1fr) 330px;
+  /* Шапка вища, ніж на телефоні: в неї тепер вбудований ряд кнопок, а не сам
+     лише підпис. */
+  :root{--head-h:58px}
+  .app{max-width:860px;
+    grid-template-columns:minmax(0,1fr);
     grid-template-rows:auto auto auto 1fr}
-  /* На десктопі шапка на всю ширину, а смуга подань — лише над змістом, тому
-     обгортка розпускається і діти знову стають елементами сітки. */
+  /* Друга колонка існує рівно доти, доки бічній панелі є що показати. */
+  .app:has(.side:not(:empty)){grid-template-columns:minmax(0,1fr) 330px}
+  .side:empty{display:none}
+  /* На десктопі шапка і смуга подань — на всю ширину, а дані під ними лягають
+     у колонки, тому обгортка розпускається і діти знову стають елементами
+     сітки. */
   .headwrap{display:contents}
   header{position:sticky;top:0;z-index:40;background:var(--chrome);
-    grid-column:1/-1;grid-row:1}
+    grid-column:1/-1;grid-row:1;gap:16px;padding-right:var(--pad)}
   /* Липне під шапкою, а не поверх неї: на десктопі шапка теж лишається на
      місці, і обидві на нулі просто накривали одна одну. */
   .viewbar{position:sticky;top:var(--head-h);z-index:39;background:var(--chrome);
-    grid-column:2;grid-row:2}
+    grid-column:1/-1;grid-row:2;padding:0 var(--pad)}
+  /* Тон у заголовків колонок той самий, що й на телефоні — полотна, не хрому.
+     Вони належать таблиці, а не керуванню, і на спільному тоні зі смугою подань
+     зливались з нею в одну пляму. */
   .colhead{position:sticky;top:calc(var(--head-h) + var(--viewbar-h));z-index:38;
-    background:var(--chrome);grid-column:2;grid-row:3}
+    grid-column:1;grid-row:3}
 
-  .tabbar{position:sticky;top:calc(var(--head-h) + 18px);z-index:39;
-    grid-column:1;grid-row:2/5;
+  /* Підпис і показник тримаються купи ліворуч, а не розпихаються по всій
+     ширині: правий край шапки віддано навігації. Показник відсунутий від
+     підпису окремо — впритул він читався як частина назви.
+
+     Стискається саме підпис, а не навігація: якщо на 900 пікселях з міткою
+     середовища і свіжим показником усе разом не влізе, хай радше обріжеться
+     хвіст підпису, ніж поїде вбік уся сторінка. */
+  .brand{flex:0 1 auto;min-width:0;overflow:hidden;gap:12px}
+  .now{margin-left:16px}
+  /* Мітка середовища в потоці, а не приклеєна до правого кута: у куті тепер
+     кнопка запису. */
+  .env{position:static;top:auto;right:auto;border-radius:4px;padding:2px 6px}
+
+  /* Навігація вирівняна по правому краю шапки — там же, де кнопки смуги подань
+     під нею і правий край таблиці ще нижче. Вкладка запису виноситься в кінець
+     ряду: вона не розділ. */
+  .tabbar{position:static;z-index:auto;margin-left:auto;flex:0 0 auto;
     width:auto;max-width:none;left:auto;bottom:auto;transform:none;
-    display:flex;flex-direction:column;align-items:stretch;gap:3px;
-    padding:18px 12px;background:transparent;backdrop-filter:none;
-    border-top:0;border-right:1px solid var(--hairline)}
+    display:flex;flex-direction:row;align-items:center;gap:2px;
+    padding:0;background:transparent;backdrop-filter:none;border:0}
   .tabbar::before{content:none}
-  .tabbar .fab{position:static;left:auto;top:auto;transform:none}
-  .tabbar .fab svg{width:19px;height:19px;stroke-width:2}
-  .tabbar button{flex-direction:row;justify-content:flex-start;gap:11px;
-    font-size:13.5px;padding:10px 12px;border-radius:10px}
-  .tabbar button svg{width:19px;height:19px}
-  .tabbar button[aria-selected="true"]{background:rgba(173,191,120,.12)}
-  .tabbar .fab{order:-1;width:auto;height:auto;margin:0 0 14px;
-    border-radius:10px;padding:11px 12px;font-size:16px;
-    justify-content:flex-start;box-shadow:none}
-  .tabbar .fab::after{content:"Запис";font-size:13.5px;margin-left:9px}
+  .tabbar button{flex-direction:row;align-items:center;gap:8px;
+    font-size:13.5px;line-height:1;padding:9px 10px;border-radius:9px;
+    transition:color .15s,background .15s}
+  /* Іконок у розділів тут немає. На телефоні вони — ціль для пальця, у шапці
+     ж чотири короткі слова читаються швидше за слово з піктограмою, а ряд без
+     них коротший на вісімдесят пікселів — саме ті пікселі, які пішли на те,
+     щоб застосунок звузився до 860 і таблиці перестали розтягуватись.
+     «Плюс» на кнопці запису лишається: він там замість слова «новий». */
+  .tabbar button[data-view] svg{display:none}
+  .tabbar button[data-view]:hover{color:var(--muted)}
+  .tabbar button[aria-selected="true"],
+  .tabbar button[aria-selected="true"]:hover{color:var(--sage);
+    background:rgba(173,191,120,.12)}
 
-  main{grid-column:2;grid-row:4;padding-bottom:56px}
-  .side{grid-column:3;grid-row:2/5;min-width:0}
+  /* Кнопка запису: та сама зелена плашка, що й на телефоні, тільки розгорнута
+     в рядок і зі словом. Висота задана явно — інакше вона в ряду виходила
+     вищою за вкладки на різницю між кеглем іконки і кеглем підпису. */
+  .tabbar .fab{position:static;left:auto;top:auto;transform:none;
+    order:1;width:auto;height:35px;border-radius:9px;
+    margin-left:10px;padding:0 14px;gap:7px;
+    flex-direction:row;align-items:center;justify-content:center;
+    font-size:13.5px;font-weight:600;line-height:1;box-shadow:none}
+  .tabbar .fab svg{width:16px;height:16px;stroke-width:2.4}
+  .tabbar .fab .fab-t{display:block}
+  .tabbar .fab:hover{background:#BFD189}
+
+  main{grid-column:1;grid-row:4;padding-bottom:56px}
+  /* Панель починається під смугою подань, а не під шапкою: смуга тепер іде на
+     всю ширину і проходить над панеллю теж. */
+  .side{grid-column:2;grid-row:3/5;min-width:0;
+    top:calc(var(--head-h) + var(--viewbar-h) + 20px)}
 
   /* the header does not hide on desktop: there is room, and the jumps annoy */
   /* Нічого не ховається на десктопі: місця досить, а стрибки дратують. */
   body.hh .headwrap{transform:none}
   body.shot.hh .tabbar{transform:none}
 
-  .jump{bottom:26px;right:calc(50% - 620px + var(--pad))}
-  .banner{bottom:0;left:50%;transform:translateX(-50%);max-width:1240px}
+  .jump{bottom:26px;right:calc(50% - 430px + var(--pad))}
+  .banner{bottom:0;left:50%;transform:translateX(-50%);max-width:860px}
 }

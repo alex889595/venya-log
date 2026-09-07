@@ -268,7 +268,8 @@ const icoOrder=chrono=>`<svg width="16" height="16" viewBox="0 0 24 24" fill="no
  *
  * @param tabs   [[ключ, підпис, активний]]
  * @param attr   data-атрибут табів, за яким їх ловить обробник розділу
- * @param opt    {order: чи має сенс сортування, hint: ключ довідки}
+ * @param opt    {order: чи має сенс сортування, hint: ключ довідки,
+ *               weight: чи показувати кнопку ваги}
  */
 function viewBar(tabs,attr,opt){
   opt=opt||{};
@@ -280,6 +281,13 @@ function viewBar(tabs,attr,opt){
   const t=tabs.map(([k,l,on])=>
     `<button class="vtab${on?' on':''}" ${attr}="${k}">${l}</button>`).join('');
   const acts=[
+    /* Вага — у смузі, а не рядком тексту над таблицею. У тексті вона лежала
+       найпершим, що є в розділі, а розділ відкривається на найсвіжішій добі:
+       при порядку «старіше зверху» найсвіже — це низ списку, і щоб дістати
+       вагу, треба було прогорнути весь список угору, до найстаріших діб.
+       Смуга липка, тож тут кнопка на місці за будь-якого порядку. */
+    opt.weight?`<button class="ordbtn" data-w
+      title="Вага для розрахунку мл/кг/год">Вага: ${kgText()} кг</button>`:'',
     opt.order===false?'':`<button class="ordbtn icon" data-jo="${chrono?'0':'1'}"
       aria-label="Порядок записів"
       title="${chrono?'старіше зверху':'свіже зверху'}">${icoOrder(chrono)}</button>`,
@@ -291,7 +299,7 @@ function viewBar(tabs,attr,opt){
   ].join('');
   document.getElementById('viewbar').innerHTML=
     `<div class="vtabs">${t}</div><div class="vacts">${acts}</div>`;
-  bindOrder();bindHint();
+  bindOrder();bindHint();bindWeight();
 }
 const clearBar=()=>{
   document.getElementById('viewbar').innerHTML='';
@@ -363,7 +371,34 @@ let keepY=0, keepBottom=0;
 /* Куди нас поставило останнє приземлення. Потрібне, щоб зрозуміти, чи людина
    встигла кудись відгорнутись, поки їхали свіжі дані. */
 let landedAt=null;
+
+/**
+ * Те саме, але впоперек: горизонтальна позиція графіків.
+ *
+ * Полотно «Кривої» ширше за екран і гортається всередині свого `.scrollx`.
+ * Перемалювання замінює `innerHTML`, тобто створює новий вузол — з нульовою
+ * прокруткою. Виглядало це так, ніби крива сама відскакує на початок через
+ * кілька секунд після того, як її відгорнули. Насправді в ту мить приходили
+ * дані: друге малювання при старті або довантаження ширшого періоду
+ * (`ensureRange`), яке саме й закінчується перемалюванням.
+ *
+ * Відновлюємо тільки тоді, коли перемалювали **те саме**. Ознакою служить
+ * ключ екрана — усе, що людина могла перемкнути. Інакше після переходу з
+ * «7 днів» на «Усе» позиція зі старого графіка лягала б на новий, де вона
+ * нічого не означає. Порядок сортування в ключ не входить: у графіках вісь
+ * задає себе сама, і кнопка порядку їх не міняє.
+ *
+ * Ключ знімається наприкінці малювання, а не на початку. Обробники спершу
+ * міняють стан і аж потім кличуть перемальовування, тому на початку `periodMode`
+ * уже новий — ключ збігався б завжди, і зміна періоду теж «зберігала» б
+ * позицію. Наприкінці ж він описує саме те, що лишилось на екрані.
+ */
+let keepX=[], lastKey=null;
+const sxBoxes=()=>[...document.querySelectorAll('#main .scrollx')];
+const screenKey=()=>
+  [view,sumMode,periodMode,periodFrom,periodTo,urineMode,moreMode].join('|');
 function beginRender(){
+  keepX=sxBoxes().map(el=>el.scrollLeft);
   keepY=window.scrollY;
   keepBottom=document.documentElement.scrollHeight-window.scrollY;
   /* Перемикання вкладки — не гортання. Якщо шапка була згорнута, вона має вже
@@ -397,6 +432,15 @@ function afterRender(){
     landedAt=Math.round(window.scrollY);
   }
   else window.scrollTo({top:isList()&&chronoNow()?Math.max(0,H-fromEnd):y});
+  /* Ставимо після вертикальної прокрутки і в тому ж кроці, що й малювання: до
+     кадру, тому відскок не встигає з'явитись на екрані. */
+  const key=screenKey();
+  if(key===lastKey)
+    sxBoxes().forEach((el,i)=>{if(keepX[i])el.scrollLeft=keepX[i]});
+  lastKey=key;keepX=[];
+  /* Тут, а не в setView(): подання і період міняються без нього, а запам'ятати
+     треба саме те, що намальовано. */
+  savePlace();
   if(window.rebaseHeader)window.rebaseHeader();
   updateJump();
   /* Повертаємо переходи лише після того, як браузер порахував нове положення:
@@ -1216,13 +1260,13 @@ function urineDaysView(){
   }).join('');
   /* Слова ліворуч, числа праворуч: погляд іде по датах униз, а колонки цифр
      лишаються суцільними — так їх можна порівнювати, не читаючи. */
-  /* Вага стоїть тут, а не в смузі: у смузі місце тільки під іконки, а тут
-     вона поруч із числом, яке з неї й рахується. */
-  return `<div class="sum-note">${avg!=null?`За ${full.length} ${
-      plural(full.length,'повну добу','повні доби','повних діб')} в середньому
-      <b>${rate1(avg)}</b> мл/кг/год. `:''}Вага для розрахунку —
-      <button class="wbtn" data-w>${kgText()} кг</button>.</div>
-    <div class="tbl">${rows}</div>`;
+  /* Ваги тут більше немає — вона в смузі подань, поруч з рештою керування.
+     Лишилось середнє: його читають, а не натискають, тому те, що воно стоїть
+     над таблицею й гортається разом з нею, нікому не заважає. */
+  const note=avg!=null?`<div class="sum-note">За ${full.length} ${
+    plural(full.length,'повну добу','повні доби','повних діб')} в середньому
+    <b>${rate1(avg)}</b> мл/кг/год.</div>`:'';
+  return note+`<div class="tbl">${rows}</div>`;
 }
 
 function openWeight(){
@@ -1260,8 +1304,10 @@ function bindWeight(){
    «коли міняла лоток». Записи лишаються там, де в них є потреба. */
 let urineMode='days';
 function urineBar(){
+  /* Вага показується лише в «За добу»: тільки там є мл/кг/год, які з неї
+     рахуються. У «Записах» вона ні на що не впливає. */
   viewBar([['days','За добу',urineMode==='days'],['rows','Записи',urineMode==='rows']],
-    'data-u',{hint:urineMode==='days'?'uday':'urows'});
+    'data-u',{hint:urineMode==='days'?'uday':'urows',weight:urineMode==='days'});
   bindUrineMode();
 }
 function renderUrine(){
@@ -1272,7 +1318,7 @@ function renderUrine(){
   if(urineMode==='days'){
     document.getElementById('main').innerHTML=
       (chrono?more:'')+urineDaysView()+(chrono?'':more);
-    bindMore();bindWeight();afterRender();
+    bindMore();afterRender();
     return;
   }
   let html=(chrono?more:'');
@@ -1834,6 +1880,36 @@ function setView(v){
 document.querySelectorAll('.tabbar [data-view]').forEach(t=>
   t.onclick=()=>{ if(t.dataset.view==='more')moreMode=null; setView(t.dataset.view); });
 
+/**
+ * Навігація живе у двох місцях: на телефоні — смугою внизу, під великим
+ * пальцем, на десктопі — рядом у шапці. Це один вузол, який переїжджає, а не
+ * дві копії розмітки: підписка на кліки, стан вкладок і кнопка запису мусять
+ * лишатись в однині.
+ *
+ * Переносить це JS, а не CSS, бо CSS перенести не може: на телефоні смуга —
+ * position:fixed, а шапка при ховуванні їде трансформацією. Трансформований
+ * предок стає системою координат для fixed-нащадків, тож смуга, покладена в
+ * розмітці всередину шапки, ховалась би разом з нею.
+ *
+ * У розмітці вона лежить у телефонному місці: якщо цей код не виконається,
+ * лишиться робоча нижня смуга, а не застосунок без навігації.
+ */
+(function(){
+  const mq=matchMedia('(min-width:900px)');
+  const bar=document.getElementById('tabbar');
+  const app=document.querySelector('.app');
+  const head=document.querySelector('header');
+  const jump=document.getElementById('jumpBtn');
+  if(!bar||!app||!head)return;
+  const place=()=>{
+    const home=mq.matches?head:app;
+    if(bar.parentNode===home)return;
+    if(home===app)app.insertBefore(bar,jump); else head.appendChild(bar);
+  };
+  place();
+  mq.addEventListener('change',place);
+})();
+
 /* Поточний показник у шапці — той самий у будь-якому розділі. */
 /**
  * Показник у шапці — про «зараз», тому старший за добу він там не стоїть.
@@ -1990,7 +2066,46 @@ async function widenIfEmpty(){
   return tries;
 }
 
+/**
+ * Де людина стояла минулого разу.
+ *
+ * Застосунок завжди відкривався в журналі. Для першого за день заходу це
+ * правильно — по нього й заходять. Але перезавантаження сторінки заходом не є:
+ * дивишся криву, оновлюєш — і ти в журналі, шукай розділ і подання наново.
+ *
+ * Тому місце тримається пів години. Це «те саме сидіння»: оновлення сторінки,
+ * перезапуск застосунку, випадково закрита вкладка. Наступного разу — знову
+ * журнал, бо саме туди в застосунок заходять.
+ *
+ * Прокрутка сюди не входить навмисно: розділ однаково стає на найсвіжіші
+ * записи. «Де я був минулого разу» в списку, що читається згори вниз, майже
+ * завжди означало «на найстаріших».
+ */
+const PLACE_KEY='venya.place';
+const PLACE_TTL=30*60e3;
+function savePlace(){
+  try{
+    localStorage.setItem(PLACE_KEY,JSON.stringify({
+      view,sumMode,urineMode,moreMode,
+      periodMode,periodFrom,periodTo,chronoOrder,at:Date.now()}));
+  }catch(e){/* приватний режим або переповнене сховище — не привід падати */}
+}
+function restorePlace(){
+  let p=null;
+  try{ p=JSON.parse(localStorage.getItem(PLACE_KEY)||'null'); }catch(e){}
+  if(!p||!views[p.view]||!(Date.now()-p.at<PLACE_TTL))return;
+  view=p.view;
+  if(p.sumMode)sumMode=p.sumMode;
+  if(p.urineMode)urineMode=p.urineMode;
+  if(p.periodMode)periodMode=p.periodMode;
+  periodFrom=p.periodFrom||null;
+  periodTo=p.periodTo||null;
+  moreMode=p.moreMode||null;
+  chronoOrder=p.chronoOrder!==false;
+}
+
 async function boot(){
+  restorePlace();
   const badge=document.getElementById('env');
   if(badge){
     badge.textContent=(API.env()==='dev'?'DEV ':'')+'v'+BUILD;
