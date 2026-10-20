@@ -26,7 +26,19 @@ var S = {
   urine:    'Сеча (лоток)',
   day:      'Сеча і стул за добу',
   meds:     'Прийоми ліків',
-  regimens: 'Курси ліків'
+  regimens: 'Курси ліків',
+  /* Корм влаштований так само, як ліки: довідник продуктів і події годування.
+     Мішана порція — не окремий тип, а просто дві події в одну хвилину:
+     «вологий 43 г» і «сухий 1 г» окремими рядками. Так грами лишаються
+     сумовними по кожному продукту, і міняти чи домішувати корми не означає
+     міняти схему. */
+  feeds:    'Годування',
+  foods:    'Корми',
+  /* Дієта — не властивість запису, а окремий факт із датами: «ренальний з
+     13.09». Тому окремий аркуш, а не колонка в годуваннях: під час переходу
+     старим кормом ще догодовують, і подія годування не скаже, яка дієта
+     призначена. */
+  diets:    'Дієта'
 };
 
 /* Old name -> current name. Used by renameSheets(). */
@@ -56,14 +68,44 @@ var HEAD = {
   /* Ані кількості за раз, ані «разів на день»: доза коригується по ходу, а
      тривалість курсу не фіксована. Що реально дали — видно з прийомів, схема
      й уточнення — вільним текстом у нотатці. */
-  regimens: ['id','Препарат','З дати','По дату','Нотатка']
+  regimens: ['id','Препарат','З дати','По дату','Нотатка'],
+  feeds:    ['Дата','Час','Корм','Грами','Нотатка','Корм id','id'],
+  /* Ккал і вуглеводи — властивість продукту, а не порції, тому живуть тут.
+     Вуглеводи на кормах зазвичай не друкують, їх рахують відніманням, тож це
+     число власниці, а не виробника. */
+  foods:    ['id','Корм','Вид','Ккал/100 г','Вуглеводи, %','Нотатка'],
+  diets:    ['id','Дієта','З дати','По дату','Нотатка']
 };
 
 /* Columns the script never writes: formulas, and what belongs to people. */
 var READONLY_COLS = ['Сеча за добу, мл','Змін лотка','Коментар лікаря',DOT_HEAD];
 
+/**
+ * Доза, менша за поділку шприца, пишеться в колонку дози словом.
+ *
+ * Той самий прийом, що й `Hi` для глюкози: значення поза шкалою називається,
+ * а не підробляється числом. `0,05 ОД` виглядало б як виміряна доза, якої
+ * ніхто не міряв, і потрапило б у всі підрахунки як справжня.
+ *
+ * Для застосунку крапля — це укол з нулем і прапорцем: нуль, бо дози нема;
+ * укол, бо він був, і добу він починає так само, як звичайний.
+ */
+var DROP_MARK = 'крапля';
+
+/** Доза з клітинки: число, слово «крапля», або порожньо. */
+function dose_(value, shown) {
+  var s = String(shown == null ? value : shown).trim();
+  if (!s) return {insulin: null, drop: false};
+  if (/^крапл/i.test(s)) return {insulin: 0, drop: true};
+  return {insulin: num_(value, shown), drop: false};
+}
+
 /* Stool categories for the dropdown. The Purina score lives in its own column. */
 var STOOL = ['не какав','сухий','нормальний',"м'який",'рідкий'];
+
+/* Види корму для випадного списку в довіднику. Ласощі окремо від сухого
+   навмисно: вони дрібні, але їх треба бачити окремо, коли рахуєш добове. */
+var FOOD_KINDS = ['вологий','сухий','ласощі','інше'];
 
 /* Glucose bands — same convention as the app (BANDS in the prototype).
    First matching rule wins, hence the "less than" thresholds. */
@@ -235,6 +277,15 @@ function f_(formulaWithCommas) {
 /** Sheet plus a "header name -> column number" map. */
 function table_(name) {
   var sh = ss_().getSheetByName(name);
+  /* Писати в аркуш, якого немає, не можна — але можна його створити.
+     Дописані пізніше аркуші зʼявляються на першому ж записі, тому забути
+     `setupSheets` після вставляння коду більше не означає «нічого не
+     зберігається». Форматування і перевірки довідників додасть `setupSheets`
+     наступним запуском; дані від цього не залежать. */
+  if (!sh && OPTIONAL_SHEETS[name]) {
+    ensureSheet_(name, HEAD[OPTIONAL_SHEETS[name]]);
+    sh = ss_().getSheetByName(name);
+  }
   if (!sh) throw new Error('Sheet "' + name + '" is missing. Run setupSheets() first.');
   var lastCol = Math.max(sh.getLastColumn(), 1);
   var head = sh.getRange(1, 1, 1, lastCol).getDisplayValues()[0];
@@ -251,8 +302,26 @@ function table_(name) {
  * brings back everything, so the same read costs five round-trips instead of
  * twenty. Writes keep using table_(): there a full read would be waste.
  */
+/**
+ * Аркуш, якого ще немає, не має класти весь застосунок.
+ *
+ * Поки аркуші були тільки обовʼязкові, кинути помилку було правильно: без
+ * «Журналу» показувати нічого. Але «Корми» і «Годування» дописуються до вже
+ * робочої таблиці, і між вставлянням коду та запуском `setupSheets` минає
+ * скільки минає — а в цей час `doGet` падав цілком, тобто застосунок не читав
+ * навіть те, що було на місці.
+ *
+ * Тому для необовʼязкових аркушів відсутність означає «порожньо».
+ */
+var OPTIONAL_SHEETS = {};
+OPTIONAL_SHEETS[S.feeds] = 'feeds';
+OPTIONAL_SHEETS[S.foods] = 'foods';
+OPTIONAL_SHEETS[S.diets] = 'diets';
+
 function readTable_(name) {
   var sh = ss_().getSheetByName(name);
+  /* На читанні навпаки: створювати нічого не треба, порожньо — це відповідь. */
+  if (!sh && OPTIONAL_SHEETS[name]) return withHead_(null, name, [], 1, []);
   if (!sh) throw new Error('Sheet "' + name + '" is missing. Run setupSheets() first.');
   var all = sh.getDataRange().getValues();
   var head = all.length ? all[0] : [];
@@ -330,6 +399,7 @@ function body_(t) {
  * data it made a 30-day request almost twice as slow.
  */
 function bodyFrom_(t, fromIso) {
+  if (!t.sh && !(t.rows && t.rows.length)) return {values: [], display: [], first: 2};
   var last = t.rows ? t.rows.length + 1 : t.sh.getLastRow();
   if (last < 2) return {values: [], display: [], first: 2};
 
@@ -479,6 +549,9 @@ function setupSheets() {
   formatDay_();
   formatMeds_();
   formatRegimens_();
+  formatFeeds_();
+  formatFoods_();
+  formatDiets_();
   paintTabs_();
 
   SpreadsheetApp.flush();
@@ -707,6 +780,66 @@ function formatMeds_() {
   setWidths_(t, {'Дата': 62, 'Час': 56, 'Препарат': 170, 'Кількість': 112, 'Нотатка': 380});
 }
 
+/* Назви кормів беруться з довідника тим самим способом, що назви препаратів
+   із курсів: перевірка підказує, але не забороняє — у таблиці іноді треба
+   вписати щось разове руками. */
+function formatFeeds_() {
+  var t = table_(S.feeds);
+  baseColumnFormats_(t);
+  var maxRows = t.sh.getMaxRows() - 1;
+
+  if (t.col['Корм']) {
+    var foodSh = ss_().getSheetByName(S.foods);
+    var foodT = table_(S.foods);
+    var src = foodSh.getRange(2, foodT.col['Корм'] || 2, Math.max(foodSh.getMaxRows() - 1, 1), 1);
+    t.sh.getRange(2, t.col['Корм'], maxRows, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInRange(src, true)
+        .setAllowInvalid(true)
+        .setHelpText('Назви беруться з аркуша «' + S.foods + '».').build());
+  }
+  if (t.col['Грами']) {
+    t.sh.getRange(2, t.col['Грами'], maxRows, 1).setNumberFormat('0.#');
+  }
+  if (t.col['Корм id']) {
+    t.sh.getRange(2, t.col['Корм id'], maxRows, 1).setNumberFormat('0');
+    t.sh.hideColumns(t.col['Корм id']);
+  }
+  var rules = [];
+  dateStripeRules_(t, rules);
+  t.sh.setConditionalFormatRules(rules);
+  setWidths_(t, {'Дата': 62, 'Час': 56, 'Корм': 170, 'Грами': 70, 'Нотатка': 380});
+}
+
+function formatFoods_() {
+  var t = table_(S.foods);
+  baseColumnFormats_(t);
+  var maxRows = t.sh.getMaxRows() - 1;
+  if (t.col['id']) {
+    t.sh.getRange(2, t.col['id'], maxRows, 1).setNumberFormat('0');
+  }
+  if (t.col['Вид']) {
+    t.sh.getRange(2, t.col['Вид'], maxRows, 1).setDataValidation(
+      SpreadsheetApp.newDataValidation().requireValueInList(FOOD_KINDS, true)
+        .setAllowInvalid(true).build());
+  }
+  if (t.col['Ккал/100 г']) {
+    t.sh.getRange(2, t.col['Ккал/100 г'], maxRows, 1).setNumberFormat('0.#');
+  }
+  if (t.col['Вуглеводи, %']) {
+    t.sh.getRange(2, t.col['Вуглеводи, %'], maxRows, 1).setNumberFormat('0.#');
+  }
+  setWidths_(t, {'id': 50, 'Корм': 200, 'Вид': 110,
+                 'Ккал/100 г': 95, 'Вуглеводи, %': 110, 'Нотатка': 320});
+}
+
+function formatDiets_() {
+  var t = table_(S.diets);
+  baseColumnFormats_(t);
+  var maxRows = t.sh.getMaxRows() - 1;
+  if (t.col['id']) t.sh.getRange(2, t.col['id'], maxRows, 1).setNumberFormat('0');
+  setWidths_(t, {'id': 50, 'Дієта': 220, 'З дати': 90, 'По дату': 90, 'Нотатка': 340});
+}
+
 function formatRegimens_() {
   var t = table_(S.regimens);
   var maxRows = t.sh.getMaxRows() - 1;
@@ -786,7 +919,8 @@ function readJournal_(t, from) {
     var gc = cell_(t, b, i, 'Глюкоза');
     var g = glu_(gc.v, gc.d);
     var ic = cell_(t, b, i, 'Інсулін, ОД');
-    var insulin = num_(ic.v, ic.d);
+    var dose = dose_(ic.v, ic.d);
+    var insulin = dose.insulin;
     var food = str_(t, b, i, 'Корм');
     var note = str_(t, b, i, 'Нотатка');
     var vet  = str_(t, b, i, 'Коментар лікаря');
@@ -797,7 +931,7 @@ function readJournal_(t, from) {
     if (!id) { id = uid_('j'); pending.push({row: b.first + i, id: id}); }
 
     out.push({id: id, date: date, time: time, glucose: g.glucose, hi: g.hi,
-              insulin: insulin, food: food, note: note, vet: vet});
+              insulin: insulin, drop: dose.drop, food: food, note: note, vet: vet});
   }
   ensureIds_(t, pending);
   return out;
@@ -873,6 +1007,64 @@ function readMeds_(t, from) {
   return out;
 }
 
+/** Дієти: кілька рядків із датами, читаються цілком. */
+function readDiets_(t) {
+  var b = body_(t), out = [];
+  for (var i = 0; i < b.values.length; i++) {
+    var name = str_(t, b, i, 'Дієта');
+    if (!name) continue;
+    var ic = cell_(t, b, i, 'id');
+    var fc = cell_(t, b, i, 'З дати');
+    var tc = cell_(t, b, i, 'По дату');
+    out.push({id: num_(ic.v, ic.d), name: name,
+              from: iso_(fc.v, fc.d), to: iso_(tc.v, tc.d),
+              note: str_(t, b, i, 'Нотатка')});
+  }
+  return out;
+}
+
+/** Довідник кормів: кілька рядків, завжди читається цілком. */
+function readFoods_(t) {
+  var b = body_(t), out = [];
+  for (var i = 0; i < b.values.length; i++) {
+    var name = str_(t, b, i, 'Корм');
+    if (!name) continue;
+    var ic = cell_(t, b, i, 'id');
+    out.push({id: num_(ic.v, ic.d), name: name,
+              kind: str_(t, b, i, 'Вид'),
+              kcal: num_(cell_(t, b, i, 'Ккал/100 г').v, cell_(t, b, i, 'Ккал/100 г').d),
+              carbs: num_(cell_(t, b, i, 'Вуглеводи, %').v, cell_(t, b, i, 'Вуглеводи, %').d),
+              note: str_(t, b, i, 'Нотатка')});
+  }
+  return out;
+}
+
+/** Події годування. Порожній рядок — той, де немає ні корму, ні грамів. */
+function readFeeds_(t, from) {
+  var b = bodyFrom_(t, from), out = [], pending = [], lastDate = '';
+  for (var i = 0; i < b.values.length; i++) {
+    var dc = cell_(t, b, i, 'Дата');
+    var date = iso_(dc.v, dc.d);
+    if (date) lastDate = date; else date = lastDate;
+
+    var name = str_(t, b, i, 'Корм');
+    var gc = cell_(t, b, i, 'Грами');
+    var grams = num_(gc.v, gc.d);
+    var note = str_(t, b, i, 'Нотатка');
+    if (!name && grams == null && !note) continue;
+
+    var tc = cell_(t, b, i, 'Час');
+    var fc = cell_(t, b, i, 'Корм id');
+    var id = str_(t, b, i, 'id');
+    if (!id) { id = uid_('f'); pending.push({row: b.first + i, id: id}); }
+
+    out.push({id: id, date: date, time: hhmm_(tc.v, tc.d), name: name,
+              grams: grams, note: note, foodId: num_(fc.v, fc.d)});
+  }
+  ensureIds_(t, pending);
+  return out;
+}
+
 function readRegimens_(t) {
   var b = body_(t), out = [];
   for (var i = 0; i < b.values.length; i++) {
@@ -924,13 +1116,17 @@ function linkMeds_(meds, regimens, t) {
 
 function readAll_(from) {
   var jt = readTable_(S.journal), ut = readTable_(S.urine),
-      dt = readTable_(S.day),     mt = readTable_(S.meds);
+      dt = readTable_(S.day),     mt = readTable_(S.meds),
+      ft = readTable_(S.feeds);
   var res = {
     journal:  readJournal_(jt, from),
     urine:    readUrine_(ut, from),
     days:     readDay_(dt, from),
     meds:     readMeds_(mt, from),
+    feeds:    readFeeds_(ft, from),
     regimens: readRegimens_(readTable_(S.regimens)),  /* few rows, always all */
+    foods:    readFoods_(readTable_(S.foods)),        /* те саме: довідник */
+    diets:    readDiets_(readTable_(S.diets)),
     /* Колонки, за якими рядок вважається непорожнім, — ті самі, що вирішують,
        чи потрапить він у відповідь взагалі. */
     first: {
@@ -938,7 +1134,8 @@ function readAll_(from) {
                                'Нотатка', 'Коментар лікаря']),
       urine:   firstDate_(ut, ['Час', 'Мл', 'Нотатка']),
       day:     firstDate_(dt, ['Стул', 'Нотатка']),
-      med:     firstDate_(mt, ['Препарат', 'Кількість', 'Нотатка'])
+      med:     firstDate_(mt, ['Препарат', 'Кількість', 'Нотатка']),
+      feed:    firstDate_(ft, ['Корм', 'Грами', 'Нотатка'])
     }
   };
   linkMeds_(res.meds, res.regimens, mt);
@@ -1020,7 +1217,10 @@ function doGet(e) {
       urine:    all.urine.filter(function (r) { return inRange_(r.date, from, to); }),
       days:     all.days.filter(function (r) { return inRange_(r.date, from, to); }),
       meds:     all.meds.filter(function (r) { return inRange_(r.date, from, to); }),
+      feeds:    all.feeds.filter(function (r) { return inRange_(r.date, from, to); }),
       regimens: all.regimens,
+      foods:    all.foods,
+      diets:    all.diets,
       /* Найраніша дата в кожному аркуші: за нею застосунок точно знає, чи
          лишилось що вантажити, замість того щоб здогадуватись по краю вікна. */
       first:    all.first,
@@ -1058,7 +1258,17 @@ var WRITE = {
     date: 'Дата', time: 'Час', name: 'Препарат', qty: 'Кількість',
     note: 'Нотатка', regimenId: 'Призначення id'}},
   regimen: {sheet: S.regimens, prefix: 'r', sorted: 'none', numericId: true, fields: {
-    name: 'Препарат', from: 'З дати', to: 'По дату', note: 'Нотатка'}}
+    name: 'Препарат', from: 'З дати', to: 'По дату', note: 'Нотатка'}},
+  feed:    {sheet: S.feeds, prefix: 'f', sorted: 'datetime', fields: {
+    date: 'Дата', time: 'Час', name: 'Корм', grams: 'Грами',
+    note: 'Нотатка', foodId: 'Корм id'}},
+  food:    {sheet: S.foods, prefix: 'k', sorted: 'none', numericId: true,
+    nextId: nextFoodId_, fields: {
+    name: 'Корм', kind: 'Вид', kcal: 'Ккал/100 г', carbs: 'Вуглеводи, %',
+    note: 'Нотатка'}},
+  diet:    {sheet: S.diets, prefix: 'e', sorted: 'none', numericId: true,
+    nextId: nextDietId_, fields: {
+    name: 'Дієта', from: 'З дати', to: 'По дату', note: 'Нотатка'}}
 };
 
 var DATE_HEADS = {'Дата': 1, 'З дати': 1, 'По дату': 1};
@@ -1166,8 +1376,14 @@ function ensureDayRow_(iso) {
   return row;
 }
 
-function nextRegimenId_() {
-  var t = table_(S.regimens), b = body_(t), max = 300;
+function nextRegimenId_() { return nextNumericId_(S.regimens, 300); }
+function nextFoodId_()    { return nextNumericId_(S.foods, 500); }
+function nextDietId_()    { return nextNumericId_(S.diets, 700); }
+
+/* Числові id довідників: курси від 301, корми від 501 — щоб в очі було видно,
+   з якого аркуша id, коли дивишся на подію. */
+function nextNumericId_(sheetName, base) {
+  var t = table_(sheetName), b = body_(t), max = base;
   for (var i = 0; i < b.values.length; i++) {
     var c = cell_(t, b, i, 'id');
     var n = num_(c.v, c.d);
@@ -1183,7 +1399,7 @@ function actCreate_(kind, id, data, extraMeds) {
   var t = table_(spec.sheet);
 
   if (spec.numericId) {
-    var rid = data.id || nextRegimenId_();
+    var rid = data.id || (spec.nextId ? spec.nextId() : nextRegimenId_());
     var exists = findRowById_(t, rid);
     if (exists) { putRow_(t, exists, spec, data); return {id: rid, row: exists, created: false}; }
     var rrow = openRow_(t, spec, '');
@@ -1339,10 +1555,19 @@ var MEDS_KNOWN = [
   {re: /клавасептин/i,                            name: 'Клавасептин',              qty: '1 табл.'},
   {re: /псил[іи]ум/i,                             name: 'Псиліум',                  qty: '1/10 ч.л.'},
   {re: /метформ|гл[іи]бенклам|(^|\s)табл\.?($|\s)/i, name: 'Метформін + Глібенкламід', qty: '1 табл.'},
-  {re: /ципрофлоксацин/i,                         name: 'Ципрофлоксацин',           qty: ''}
+  {re: /ципрофлоксацин/i,                         name: 'Ципрофлоксацин',           qty: ''},
+  {re: /ам[іи]ладол/i,                            name: 'Аміладол',                 qty: ''}
 ];
 
 var RE_INSULIN = /(\d+(?:[.,]\d+)?)\s*ОД/i;
+/* Укол, якого свідомо не робили. В архіві це завжди окремий фрагмент і завжди
+   на місці дози, тому читається як нуль, а не як нотатка. Апостроф буває
+   трьох різних символів, тому в шаблоні він не фіксований. */
+var RE_NOSHOT = /^без\s+ін.{0,2}єкц/i;
+/* Доза, меншa за поділку шприца. Словом, а не числом: 0,05 ОД виглядало б як
+   виміряна доза, якої ніхто не міряв. Шаблон прив'язаний до початку фрагмента,
+   щоб «2 краплі» якихось ліків сюди не потрапляли. */
+var RE_DROP = /^крапл/i;
 var RE_QTY = /\d+(?:[.,]\d+)?(?:\s*\/\s*\d+)?\s*(?:ч\.?\s*л\.?|табл\.?|таб\.?|мг|мл|крап)/i;
 var RE_FOOD_START = /^(корм|їжа|їсть|поїв|поїла|вологий|сухий|сухого|догодувала|погодувала|гранул|\d+([.,]\d+)?\s*г\b|\d+([.,]\d+)?\s*ч\.?\s*л)/i;
 var RE_FOOD_ANY = /(корм|вологий|сухого|ласощ|ч\.\s*л)/i;
@@ -1387,6 +1612,11 @@ function tidy_(s) {
 function parseNote_(text) {
   var res = {insulin: null, food: [], note: [], meds: []};
   fragments_(text).forEach(function (f) {
+    /* Обидва стани дози перевіряємо перед числом і перед ліками: інакше вони
+       провалюються в нотатку, і з журналу зникає те, чим були останні місяці —
+       свідома відмова від уколу і доза-крапля. */
+    if (RE_NOSHOT.test(f)) { res.insulin = 0; return; }
+    if (RE_DROP.test(f))   { res.insulin = DROP_MARK; return; }
     var m = f.match(RE_INSULIN);
     if (m) {
       res.insulin = parseFloat(m[1].replace(',', '.'));

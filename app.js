@@ -39,6 +39,7 @@ let TODAY = new Date().toISOString().slice(0, 10);
 let view='glucose', editing=null;
 
 let log=[], regimens=[], meds=[], urine=[], stool=[], days=[];
+let feeds=[], foods=[], diets=[];
 /* Адресу таблиці віддає API, а не config.js: у публічному репозиторії їй не
    місце, бо таблиця відкрита на редагування за посиланням. */
 let sheetUrl='', notionUrl='';
@@ -54,6 +55,38 @@ const activeRegimens=(date=TODAY)=>regimens.filter(r=>r.from<=date&&(!r.to||r.to
 
 const medsOn=date=>meds.filter(m=>m.date===date);
 const medName=m=>regOf(m.rid).name;
+/* З кількістю: у корму грами показуються, і без них ліки в тому ж рядку
+   виглядали приблизними. Якщо виявиться задовго — прибрати тут одне місце. */
+const medLabel=m=>medName(m)+(m.qty?' '+m.qty:'');
+
+/**
+ * Чотири стани дози, в одному місці.
+ *
+ *   порожньо  — уколу не було;
+ *   число     — виміряна доза;
+ *   0         — укол мав бути і свідомо не зроблений;
+ *   0 + drop  — укол був, доза менша за поділку шприца.
+ *
+ * «Пропуск» як слово прибрано навмисно: пів року це був не пропуск, а
+ * рішення, і щодня. Крапля ж не дорівнює нулю: кіт щось отримав.
+ */
+const DROP_WORD='крапля';
+/* Ті самі види, що у випадному списку довідника в таблиці. */
+const FOOD_KINDS=['вологий','сухий','ласощі','інше'];
+const isDrop=e=>e.insulin===0&&!!e.drop;
+const isNoShot=e=>e.insulin===0&&!e.drop;
+/* Коротко — для таблиць і чіпів, де місця мало. */
+/* Те, що лягає в поле форми: нуль саме нулем, а не «0,0» — він тут щоденне
+   значення, і зайва кома в ньому щоразу муляє. */
+const doseField=e=>e.insulin==null?'':isDrop(e)?DROP_WORD
+  :e.insulin===0?'0':fmt(e.insulin);
+const doseShort=e=>e.insulin==null?'':isDrop(e)?DROP_WORD
+  :isNoShot(e)?'без уколу':fmt(e.insulin);
+/* Повністю — для журналу й карток, де є рядок тексту. */
+const doseLong=e=>e.insulin==null?''
+  :isDrop(e)?'крапля Лантус'
+  :isNoShot(e)?'без ін'+String.fromCharCode(39)+'єкції'
+  :fmt(e.insulin)+' ОД';
 
 /* той самий список, що у випадному списку аркуша */
 const STOOL=['не какав','сухий','нормальний',"м'який",'рідкий'];
@@ -88,27 +121,101 @@ function shotsAsc(){
   });
   return {asc,shots:s};
 }
+/**
+ * Доба, коли її нема від чого починати.
+ *
+ * Поки є уколи, добу починає ранковий укол — і так і лишається. Але в ремісії
+ * уколів немає, а якоря немає теж: раніше в такому разі всі записи від першого
+ * до останнього падали в одну групу, і півроку виглядало як одна доба.
+ *
+ * Тоді добу починає година. Не опівніч: цикл 20:00 → 08:00 уже тримає нічні
+ * записи і годування о 00:00 разом з попереднім вечором, і опівніч розірвала б
+ * ніч навпіл. Шоста ранку — межа, обрана власницею від дванадцятигодинного
+ * циклу.
+ *
+ * Гарантовано порожньої години не існує, і минулі дані її не обіцяють. Але
+ * щільні заміри з ночі до ранку бувають тільки в доби з уколами — а в таких
+ * добах якорем лишається укол, і година не вмикається взагалі.
+ *
+ * Це правило групування на момент показу, а не щось у даних: міняється одне
+ * число, нічого не переписується.
+ */
+const DAY_START=6;
+/* Записи раніше DAY_START належать попередній добі. Запис без часу — денний,
+   його дату не зсуваємо. */
+const logicalDay=e=>
+  e.time && +e.time.slice(0,2)<DAY_START ? shiftDay(e.date,-1) : e.date;
+/* Початок доби як псевдозапис: hrs() потрібні від нього лише дата й час. */
+const dayStart=iso=>({date:iso,time:String(DAY_START).padStart(2,'0')+':00'});
+/**
+ * Наскільки далеко може стояти наступний ранковий укол, щоб це все ще був
+ * цикл. Звичайний — 24 години, зі зсувом буває 26–28. Більше означає вже не
+ * зсунутий цикл, а перерву в уколах.
+ */
+const MAX_CYCLE=30;
+
 function buildDays(){
   const {asc,shots}=shotsAsc();
   const ams=shots.filter(s=>s._slot==='am');
+  const nextAmOf=new Map(ams.map((s,i)=>[s,ams[i+1]||null]));
+  /**
+   * Чи скінчилась доба, почата уколом.
+   *
+   * Поки попереду є наступний ранковий укол — ні: добу закриє він сам, і це
+   * рівно та поведінка, що була завжди. Порогом тут не можна користуватись
+   * наосліп: звичайний цикл 08:00 → 08:00 перетинає шосту ранку, і межа за
+   * годинником відрізала б від нього ранкові записи.
+   *
+   * А якщо наступного уколу немає зовсім або він аж за MAX_CYCLE годин —
+   * тримати добу нема на чому, і вона кінчається на найближчій межі за
+   * годинником. Інакше остання доба на інсуліні ковтала б половину наступної.
+   */
+  const cycleEnded=(anchor,e)=>{
+    const nx=nextAmOf.get(anchor);
+    if(nx&&hrs(anchor,nx)<=MAX_CYCLE)return false;
+    return logicalDay(e)!==logicalDay(anchor);
+  };
   const groups=[];
   asc.forEach(e=>{
+    const cur=groups[groups.length-1];
     if(e.insulin!=null&&e._slot==='am') groups.push({anchor:e,date:e.date,entries:[]});
-    if(!groups.length) groups.push({anchor:null,date:e.date,entries:[]});
+    else if(!cur
+      || (cur.anchor ? cycleEnded(cur.anchor,e) : logicalDay(e)!==cur.date))
+      groups.push({anchor:null,date:logicalDay(e),entries:[]});
     groups[groups.length-1].entries.push(e);
   });
   groups.forEach((g,i)=>{
     const pm=g.entries.find(x=>x.insulin!=null&&x._slot==='pm');
     // сам вечірній укол уже належить нічній половині
     g.entries.forEach(e=>e._night = !!pm && stamp(e)>=stamp(pm));
-    const idx=ams.indexOf(g.anchor);
-    const prevAm=ams[idx-1], nextAm=ams[idx+1];
-    g.shift = g.anchor&&prevAm ? hrs(prevAm,g.anchor)-24 : 0;
-    // закрита доба тягнеться до наступного якоря, поточна — до останнього запису
-    const t0=g.anchor||g.entries[0];
+    /* Без якоря indexOf() віддає −1, і сусідами ставали ams[−2] та ams[0] —
+       тобто «наступним» уколом для доби без уколів виявлявся найперший укол
+       в історії. Поки такий випадок був один на всю сітку, це було непомітно. */
+    const idx=g.anchor?ams.indexOf(g.anchor):-1;
+    const prevAm=idx>0?ams[idx-1]:null;
+    const nextAm=idx>=0?(ams[idx+1]||null):null;
+    /* Зсув має сенс лише між сусідніми циклами. Після перерви в уколах
+       різниця з попереднім ранковим — це довжина перерви, а не зсув, і
+       підпис «+72,0 год» казав би про добу неправду. */
+    const gap = g.anchor&&prevAm ? hrs(prevAm,g.anchor) : null;
+    g.shift = gap!=null && gap<=MAX_CYCLE ? gap-24 : 0;
+    const t0=g.anchor||dayStart(g.date);
+    g.start=t0;
+    /* Вісь має кінчатись там, де кінчається доба, — а це не завжди наступний
+       укол. Якщо він аж за MAX_CYCLE годин, добу закрила година, і тягнути до
+       нього вісь означало б намалювати одну точку на осі в сто годин. */
+    const closedByShot = !!nextAm && hrs(t0,nextAm)<=MAX_CYCLE;
     // передукольний замір наступної доби замикає криву на правому краї
-    g.next = nextAm || null;
-    g.span = nextAm ? hrs(t0,nextAm) : Math.max(hrs(t0,g.entries[g.entries.length-1])+0.5, 6);
+    g.next = closedByShot ? nextAm : null;
+    const last=g.entries[g.entries.length-1];
+    g.span = closedByShot ? hrs(t0,nextAm)
+      /* Доба без уколів — рівно доба: вісь однакова на всіх таких добах, і
+         вони читаються одна проти одної за годинником. */
+      : !g.anchor ? 24
+      /* Поточний цикл ще триває — вісь росте разом із замірами. */
+      : i===groups.length-1 ? Math.max(hrs(t0,last)+0.5, 6)
+      /* Цикл, який обірвався без наступного уколу: до межі за годинником. */
+      : Math.max(hrs(t0,dayStart(shiftDay(logicalDay(g.anchor),1))), 6);
     g.entries.reverse();
   });
   return groups.reverse();
@@ -127,7 +234,10 @@ function sparkline(g,o={}){
   const W=o.W||600, H=o.H||84, R=o.r||4.6, SW=o.sw||2.6;
   const padB=Math.round(H*.23), padT=Math.round(H*.13), mY=28;
   const asc=[...g.entries].sort((a,b)=>stamp(a).localeCompare(stamp(b)));
-  const t0=g.anchor||asc[0];
+  /* g.start — це або укол, або початок доби за годинником. Запасний asc[0]
+     лишається лише на випадок, якщо сюди прийде група не з buildDays(): він
+     прив'язує вісь до випадкового першого запису, тобто вирівнювання не дає. */
+  const t0=g.start||g.anchor||asc[0];
   /* вісь тягнеться до наступного ранкового уколу, а замір, знятий перед ним,
      стає кінцевою точкою кривої — тому вона доходить до правого краю,
      і при цьому доби лишаються порівнюваними між собою */
@@ -155,7 +265,8 @@ function sparkline(g,o={}){
   asc.filter(e=>e.insulin!=null).forEach(e=>{
     s+=`<line x1="${X(e)}" y1="${H-padB+5}" x2="${X(e)}" y2="${H-padB-11}"
       stroke="${C_INS}" stroke-width="${SW+.8}" stroke-linecap="round"
-      ${e.insulin===0?'stroke-dasharray="2 3" opacity=".5"':''}/>`;});
+      ${isNoShot(e)?'stroke-dasharray="2 3" opacity=".5"':''}
+      ${isDrop(e)?'opacity=".6"':''}/>`;});
   if(o.food!==false) asc.filter(e=>e.food).forEach(e=>{
     const x=X(e),y=H-R-1;
     s+=`<path d="M${x} ${y-R} L${x+R} ${y} L${x} ${y+R} L${x-R} ${y} Z" fill="${C_FOOD}"/>`;});
@@ -483,11 +594,13 @@ function denseRows(){
     const c=colorFor(e);
     const newDay=e.date!==prevDate;
     const bits=[];
-    if(e.insulin===0)bits.push('<b class="ins">укол пропущено</b>');
-    else if(e.insulin!=null)bits.push(`<b class="ins">${fmt(e.insulin)} ОД</b>`);
+    if(e.insulin!=null)bits.push(`<b class="ins">${esc(doseLong(e))}</b>`);
+    /* Старий корм вільним текстом і нові рядки годування живуть поруч:
+       переписувати історію ми не стали, тому запис має або одне, або друге. */
     if(e.food)bits.push(esc(e.food));
+    feedsAt(e.date,e.time).forEach(f=>bits.push(esc(feedLabel(f))));
     medsOn(e.date).filter(m=>(m.time||'')===e.time).forEach(m=>
-      bits.push(esc(medName(m))));
+      bits.push(esc(medLabel(m))));
     if(e.note)bits.push(`<span class="dn">${esc(e.note)}</span>`);
     out+=`<div class="dr${newDay?' d0':''}" data-edit="${e.id}">
       <span class="dd">${newDay?dateShort(e.date):''}</span>
@@ -617,7 +730,7 @@ function renderCards(){
   groups.forEach((g,gi)=>{
     const nums=g.entries.filter(e=>e.glucose!=null).map(e=>e.glucose);
     const doses=g.entries.filter(e=>e.insulin!=null).sort((a,b)=>stamp(a).localeCompare(stamp(b)))
-      .map(e=>e.insulin===0?'пропуск':fmt(e.insulin));
+      .map(e=>doseShort(e));
     const open=openDays.has(g.date);
     const uml=urine.filter(u=>u.date===g.date).reduce((s,u)=>s+u.ml,0);
 
@@ -639,7 +752,8 @@ function renderCards(){
           delta=`<span class="delta">${dv<0?'↓':'↑'} ${fmt(Math.abs(dv))} за ${fmt(dt)} год</span>`;
       }
       const chips=[];
-      if(e.insulin===0) chips.push('<span class="chip skip">ін\'єкцію пропущено</span>');
+      if(isNoShot(e)) chips.push('<span class="chip skip">без ін\'єкції</span>');
+      else if(isDrop(e)) chips.push('<span class="chip dose">крапля Лантус</span>');
       else if(e.insulin) chips.push(`<span class="chip dose">${fmt(e.insulin)} ОД Лантус</span>`);
       if(e.food) chips.push(`<span class="chip food">${esc(e.food)}</span>`);
       const long=(e.note||'').length>95;
@@ -668,7 +782,12 @@ function renderCards(){
       <button class="day-head"><div class="day-top">
         <span class="day-name">${dayName(g.date)}</span>
         <span class="day-range">${nums.length?`<i>мін–макс</i> ${fmt(Math.min(...nums))} – ${fmt(Math.max(...nums))}`:''}<span class="chev" aria-hidden="true">${CHEV}</span></span>
-      </div>${g.anchor?`<div class="day-line2">цикл від ${g.anchor.time}${shiftLbl}</div>`:''}${sparkline(g)}<div class="day-meta">
+      </div>${/* Вісь підписана завжди. У мішаному періоді сусідні картки
+         міряються по-різному — від уколу і від години, — і не сказати про це
+         означало б показати два різні графіки як один ряд. */''
+      }<div class="day-line2">${g.anchor
+        ? `цикл від ${g.anchor.time}${shiftLbl}`
+        : `доба від ${g.start.time}`}</div>${sparkline(g)}<div class="day-meta">
         <span class="meta">${g.entries.filter(e=>e.glucose!=null||e.hi).length} замірів</span>
         ${doses.length?`<span class="meta dose">дози ${doses.join(' · ')}</span>`:'<span class="meta">без інсуліну</span>'}
         ${uml?`<span class="meta">сеча ${uml} мл</span>`:''}
@@ -732,7 +851,7 @@ function cyclesFull(){
     const inside=asc.filter(e=>stamp(e)>=stamp(s)&&(!next||stamp(e)<stamp(next)));
     const after=inside.filter(e=>e!==s&&e.glucose!=null);
     const nadir=after.length?after.reduce((m,e)=>e.glucose<m.glucose?e:m):null;
-    return {shot:s,slot:s._slot,dose:s.insulin,entries:inside,nadir,
+    return {shot:s,slot:s._slot,dose:s.insulin,drop:!!s.drop,entries:inside,nadir,
       n:inside.filter(e=>e.glucose!=null||e.hi).length,
       lag:nadir?hrs(s,nadir):null,closed:!!next,dur:next?hrs(s,next):null};
   });
@@ -769,9 +888,15 @@ function cellA(c){
   if(!c)return '<div class="cell2"><span class="dash">—</span></div>';
   const pre=c.shot;
   const preV=pre.hi?'Hi':pre.glucose!=null?fmt(pre.glucose):'—';
-  const dose=c.dose===0
-    ?'<span class="dose-dot skip"><i></i></span>'
-    :`<span class="dose-dot"><i></i>${fmt(c.dose)}</span>`;
+  /* Кружок каже «момент уколу був», число — «скільки». Тому три стани
+     вміщаються без жодного зайвого пікселя: повний кружок із числом — доза,
+     повний без числа — крапля, порожній — уколу не робили. Слово «крапля»
+     сюди не влізло б: 56px проти 38px у «0,75». */
+  const dose=c.dose!==0
+    ?`<span class="dose-dot"><i></i>${fmt(c.dose)}</span>`
+    :c.drop
+      ?'<span class="dose-dot" title="крапля"><i></i></span>'
+      :'<span class="dose-dot skip" title="без ін'+String.fromCharCode(39)+'єкції"><i></i></span>';
   /* Показник іде першим і в верхньому рядку, і в нижньому: так дві цифри
      стоять точно одна під одною і колонка читається згори вниз. Стрілка чи
      слово «через» попереду зсували нижнє число вправо — і ряд починав скакати. */
@@ -980,7 +1105,12 @@ function trendChart(pts,opt){
       if(p.hi)g+=`<circle cx="${x}" cy="${Y(p.v)}" r="8" fill="none" stroke="${p.col}"
         stroke-width="1.4" opacity=".7" stroke-dasharray="2.2 2.2"/>`;
     }
-    if(p.dose===0){
+    if(p.dose===0&&p.drop){
+      /* Крапля: позначка заввишки з найтоншу поділку. Не нуль — щось дали, —
+         але й не висота, бо міряти там нічого. */
+      g+=`<rect x="${x-bw/2}" y="${base-3}" width="${bw}" height="3" rx="1.5"
+        fill="${C_INS}" opacity=".85"/>`;
+    }else if(p.dose===0){
       g+=`<line x1="${x-bw/2}" y1="${base}" x2="${x+bw/2}" y2="${base}"
         stroke="var(--faint)" stroke-width="2" stroke-dasharray="2 2.5" opacity=".8"/>`;
     }else if(p.dose!=null){
@@ -1013,7 +1143,8 @@ function trendView(){
     lg(`<svg width="14" height="12"><line x1="2" y1="6" x2="12" y2="6" stroke="var(--faint)" stroke-width="2" stroke-dasharray="2 2.5"/></svg>`,'укол не робили'),
     lg(`<svg width="16" height="12"><rect x="1" y="3" width="14" height="6" fill="${B}" opacity=".22"/></svg>`,'5–15 ммоль/л'),
   ]);
-  const base=c=>({slot:c.slot,dose:c.dose,label:c.slot==='am'?dateShort(c.shot.date):''});
+  const base=c=>({slot:c.slot,dose:c.dose,drop:!!c.drop,
+    label:c.slot==='am'?dateShort(c.shot.date):''});
   const pre=cyc.filter(c=>c.shot.glucose!=null||c.shot.hi).map(c=>Object.assign(base(c),{
     v:c.shot.hi?30:c.shot.glucose, hi:!!c.shot.hi, col:colorFor(c.shot)}));
   const lowOf=c=>{
@@ -1121,7 +1252,8 @@ function periodView(){
   inRange.filter(e=>e.insulin!=null).forEach(e=>{
     g+=`<line x1="${X(at(e))}" y1="${H-pb}" x2="${X(at(e))}" y2="${H-pb-13}"
       stroke="${C_INS}" stroke-width="2.6" stroke-linecap="round"
-      ${e.insulin===0?'stroke-dasharray="2 3" opacity=".5"':''}/>`;});
+      ${isNoShot(e)?'stroke-dasharray="2 3" opacity=".5"':''}
+      ${isDrop(e)?'opacity=".6"':''}/>`;});
   inRange.filter(e=>e.food).forEach(e=>{
     const x=X(at(e)),y=H-pb+9,r=3.4;
     g+=`<path d="M${x} ${y-r} L${x+r} ${y} L${x} ${y+r} L${x-r} ${y} Z" fill="${C_FOOD}"/>`;});
@@ -1240,8 +1372,6 @@ const rate1=r=>r.toFixed(1).replace('.',',');
 function urineDaysView(){
   const list=urineDays().filter(d=>mlOn(d)>0||stoolOn(d));
   if(!list.length)return '<div class="empty">Записів ще немає.</div>';
-  const full=list.filter(d=>d!==TODAY&&mlOn(d)>0);
-  const avg=full.length?full.reduce((s,d)=>s+rateOn(d),0)/full.length:null;
   setColHead(`<div class="thead"><div class="urow hd"><div>Доба</div>
     <div>Стул</div><div>Сеча</div><div>мл/кг/год</div></div></div>`);
   const rows=list.map(date=>{
@@ -1260,13 +1390,19 @@ function urineDaysView(){
   }).join('');
   /* Слова ліворуч, числа праворуч: погляд іде по датах униз, а колонки цифр
      лишаються суцільними — так їх можна порівнювати, не читаючи. */
-  /* Ваги тут більше немає — вона в смузі подань, поруч з рештою керування.
-     Лишилось середнє: його читають, а не натискають, тому те, що воно стоїть
-     над таблицею й гортається разом з нею, нікому не заважає. */
-  const note=avg!=null?`<div class="sum-note">За ${full.length} ${
-    plural(full.length,'повну добу','повні доби','повних діб')} в середньому
-    <b>${rate1(avg)}</b> мл/кг/год.</div>`:'';
-  return note+`<div class="tbl">${rows}</div>`;
+  /* Над таблицею більше немає нічого: вага переїхала в смугу подань, а
+     середнє прибрано зовсім.
+
+     Середнє рахувалось по всіх минулих добах, де мілілітри більші за нуль, —
+     і «повною» вважало будь-яку з них. Але застосунок не знає, чи збирали
+     лоток цілу добу: почали міряти о шостій вечора — мілілітри за шість годин
+     однаково поділяться на двадцять чотири. Вгадувати неповні доби по краях
+     серій ми відмовились: це була б та сама вигадана точність.
+
+     А без цього середнє за великий проміжок нічого не каже. Подобові числа
+     лишаються — їх читає та сама людина, яка знає, котрі доби неповні; а
+     лікарка бачить у таблиці сирі мілілітри, а не похідну від них. */
+  return `<div class="tbl">${rows}</div>`;
 }
 
 function openWeight(){
@@ -1364,7 +1500,10 @@ const plural=(n,one,few,many)=>{
 };
 
 function courseStats(r){
-  const list=meds.filter(m=>m.rid===r.id).sort((a,b)=>a.date.localeCompare(b.date));
+  /* За датою і часом, а не самою датою. Поки в картці було видно п'ять
+     останніх рядків, порядок усередині доби не мав значення; у повному списку
+     два прийоми на добу стояли б у випадковому порядку. */
+  const list=meds.filter(m=>m.rid===r.id).sort((a,b)=>stamp2(a).localeCompare(stamp2(b)));
   /* Для завершеного курсу «востаннє» дублювало б дату кінця, тому там
      показуємо тривалість — щоб не віднімати дати в голові. */
   const span=r.to&&r.from
@@ -1373,15 +1512,28 @@ function courseStats(r){
           active:!r.to, span};
 }
 
+/**
+ * Скільки прийомів курсу видно, поки список не розгорнули.
+ *
+ * Раніше на цьому число й кінчалось: решта не показувалась ніяк, і побачити
+ * її можна було тільки в таблиці. На Псиліумі це означало п'ять рядків з
+ * двадцяти шести.
+ */
+const MEDS_SHOWN=5;
+
 function courseCard(r){
   const st=courseStats(r);
-  const rows=[...st.list].reverse().slice(0,5).map(m=>
-    `<div class="mrow" data-medit="${m.id}">
+  const mrow=m=>`<div class="mrow" data-medit="${m.id}">
       <span class="md">${dmy(m.date)}</span>
       <span class="mq">${esc(m.qty||'')}</span>
       <span class="mt">${m.time||''}</span>
       ${m.note?`<span class="mn">${esc(m.note)}</span>`:''}
-    </div>`).join('');
+    </div>`;
+  /* Новіші зверху: питання до курсу майже завжди «коли востаннє», а не
+     «коли почали» — початок і так стоїть у підписі над списком. */
+  const all=[...st.list].reverse();
+  const rows=all.slice(0,MEDS_SHOWN).map(mrow).join('');
+  const rest=all.slice(MEDS_SHOWN).map(mrow).join('');
   return `<section class="med">
     <div class="med-top">
       <span class="day-name">${esc(r.name)}</span>
@@ -1392,13 +1544,170 @@ function courseCard(r){
         ? (st.last?` · востаннє ${dmy(st.last)}`:'')
         : (st.span?` · ${st.span} ${plural(st.span,'день','дні','днів')}`:'')}${
       r.note?`<br>${esc(r.note)}`:''}</div>
-    ${rows?`<div class="mlist">${rows}</div>`:''}
-    ${st.list.length>5?`<div class="mmore">показано останні 5</div>`:''}
+    ${rows?`<div class="mlist">${rows}${
+      rest?`<div class="mrest" hidden>${rest}</div>`:''}</div>`:''}
+    ${rest?`<button class="mmore" data-mall="${r.id}" aria-expanded="false"
+      >показати всі ${all.length}</button>`:''}
     ${API.canWrite()?`<div class="card-acts">
       <button class="btn ghost small" data-redit="${r.id}">Змінити призначення</button>
       ${st.active?`<button class="btn ghost small" data-endr="${r.id}">Завершити курс</button>`:''}
     </div>`:''}
   </section>`;
+}
+
+
+/* ---- довідник кормів ---- */
+function openFood(id){
+  if(shotMode||!API.canWrite())return;
+  const f=id?foods.find(x=>x.id===id):{kind:'вологий'};
+  editing=id||null;
+  const kinds=FOOD_KINDS.map(k=>
+    `<option value="${k}"${k===(f.kind||'вологий')?' selected':''}>${k}</option>`).join('');
+  shell(id?'Змінити корм':'Новий корм',`
+    <div class="field"><label for="k-name">Назва</label>
+      <input id="k-name" type="text" value="${esc(f.name||'')}"
+        placeholder="Royal Canin Diabetic вологий"></div>
+    <div class="field"><label for="k-kind">Вид</label>
+      <select id="k-kind">${kinds}</select></div>
+    <div class="row2">
+      <div class="field"><label for="k-kcal">Ккал на 100 г</label>
+        <input id="k-kcal" type="text" inputmode="decimal"
+          value="${f.kcal!=null?fmtG(f.kcal):''}" placeholder="85"></div>
+      <div class="field"><label for="k-carb">Вуглеводи, %</label>
+        <input id="k-carb" type="text" inputmode="decimal"
+          value="${f.carbs!=null?fmtG(f.carbs):''}" placeholder="3"></div>
+    </div>
+    <div class="hint">Ккал і вуглеводи потрібні лише для підрахунків і можуть
+      лишатись порожніми. Вуглеводи на кормах зазвичай не друкують — це число
+      рахується відніманням, тобто ваше, а не виробника.</div>
+    <div class="field"><label for="k-note">Нотатка</label>
+      <input id="k-note" type="text" value="${esc(f.note||'')}"></div>`,
+    id?()=>{API.remove('food',id);foods=foods.filter(x=>x.id!==id);
+            close();renderFoods()}:null);
+  document.getElementById('saveBtn').onclick=()=>{
+    const num=v=>{const t=v.trim().replace(',','.');return t===''?null:parseFloat(t)};
+    const data={name:document.getElementById('k-name').value.trim(),
+      kind:document.getElementById('k-kind').value,
+      kcal:num(document.getElementById('k-kcal').value),
+      carbs:num(document.getElementById('k-carb').value),
+      note:document.getElementById('k-note').value.trim()};
+    if(!data.name){close();return}
+    if(editing){Object.assign(foods.find(x=>x.id===editing),data);
+      API.update('food',editing,data)}
+    else{
+      /* id присвоює скрипт, як і курсам. До відповіді кладемо тимчасовий
+         відʼємний — щоб рядок було видно одразу, і щоб він гарантовано не
+         збігся з жодним справжнім. */
+      const tmp=-Date.now();
+      foods.push({id:tmp,...data});
+      API.create('food',null,data);
+    }
+    close();renderFoods();
+  };
+}
+
+
+/* ---- дієта ---- */
+/* Дієта, яка діє на цю дату. Переходи бувають з перекриттям, тому беремо
+   найпізнішу з тих, що почались не пізніше дати. */
+const dietOn=date=>{
+  const act=diets.filter(d=>(!d.from||d.from<=date)&&(!d.to||d.to>=date))
+    .sort((a,b)=>(a.from||'').localeCompare(b.from||''));
+  return act.length?act[act.length-1]:null;
+};
+function openDiet(id){
+  if(shotMode||!API.canWrite())return;
+  const d=id?diets.find(x=>x.id===id):{from:TODAY};
+  editing=id||null;
+  shell(id?'Змінити дієту':'Нова дієта',`
+    <div class="field"><label for="e-name">Назва</label>
+      <input id="e-name" type="text" value="${esc(d.name||'')}"
+        placeholder="Ренальний"></div>
+    <div class="row2">
+      <div class="field"><label for="e-from">З дати</label>${dateInput('e-from',d.from||TODAY)}</div>
+      <div class="field"><label for="e-to">По дату</label>
+        ${dateInput('e-to',d.to,{empty:true,hint:'триває'})}</div>
+    </div>
+    <div class="field"><label for="e-note">Нотатка</label>
+      <input id="e-note" type="text" value="${esc(d.note||'')}"></div>`,
+    id?()=>{API.remove('diet',id);diets=diets.filter(x=>x.id!==id);
+            close();renderFoods()}:null);
+  bindDate('e-from');bindDate('e-to',{hint:'триває'});
+  document.getElementById('saveBtn').onclick=()=>{
+    const data={name:document.getElementById('e-name').value.trim(),
+      from:document.getElementById('e-from').value||TODAY,
+      to:document.getElementById('e-to').value||'',
+      note:document.getElementById('e-note').value.trim()};
+    if(!data.name){close();return}
+    if(editing){Object.assign(diets.find(x=>x.id===editing),data);
+      API.update('diet',editing,data)}
+    else{diets.push({id:-Date.now(),...data});API.create('diet',null,data)}
+    close();renderFoods();
+  };
+}
+function dietBlock(){
+  const now=dietOn(TODAY);
+  const past=diets.filter(d=>d!==now)
+    .sort((a,b)=>(b.from||'').localeCompare(a.from||''));
+  const row=d=>`<div class="mrow" data-eedit="${d.id}">
+    <span class="md">${d.from?dmy(d.from):''}</span>
+    <span class="mq">${esc(d.name)}</span>
+    <span class="mt">${d.to?dmy(d.to):'досі'}</span>
+    ${d.note?`<span class="mn">${esc(d.note)}</span>`:''}</div>`;
+  return `<section class="med">
+    <div class="med-top">
+      <span class="day-name">${now?esc(now.name):'Дієта не вказана'}</span>
+      <span class="med-state${now?' on':''}">${now?'зараз':''}</span>
+    </div>
+    <div class="sub">${now
+      ? `з ${dmy(now.from)}${now.to?' по '+dmy(now.to):''}${now.note?'<br>'+esc(now.note):''}`
+      : 'Відмічайте тут, коли міняєте корм: запис годування каже, чим годували, а не що призначено.'}</div>
+    ${past.length?`<div class="mlist">${past.map(row).join('')}</div>`:''}
+    ${API.canWrite()?`<div class="card-acts">
+      ${now?`<button class="btn ghost small" data-eedit="${now.id}">Змінити</button>`:''}
+      <button class="btn ghost small" id="addDiet">Нова дієта</button>
+    </div>`:''}
+  </section>`;
+}
+
+function renderFoods(){
+  beginRender();clearBar();
+  const by={};FOOD_KINDS.forEach(k=>by[k]=[]);
+  foods.forEach(f=>(by[f.kind]||(by[f.kind]=[])).push(f));
+  const card=f=>`<section class="med">
+    <div class="med-top">
+      <span class="day-name">${esc(f.name)}</span>
+      <span class="med-state">${esc(f.kind||'')}</span>
+    </div>
+    <div class="sub">${f.kcal!=null?fmtG(f.kcal)+' ккал/100 г':'ккал не вказано'}${
+      f.carbs!=null?' * вуглеводи '+fmtG(f.carbs)+'%':''}${
+      f.note?`<br>${esc(f.note)}`:''}</div>
+    ${API.canWrite()?`<div class="card-acts">
+      <button class="btn ghost small" data-kedit="${f.id}">Змінити</button>
+    </div>`:''}
+  </section>`;
+  const groups=Object.keys(by).filter(k=>by[k].length)
+    .map(k=>by[k].map(card).join('')).join('');
+  document.getElementById('main').innerHTML=`
+    <button class="more-item" data-more="back" style="border:0;padding:14px 2px;
+      margin:0 var(--pad);width:auto">&larr; Ще</button>
+    <div class="med-acts">
+      ${API.canWrite()?`<button class="btn ghost" id="addFood">Новий корм</button>`:''}
+    </div>
+    ${dietBlock()}
+    ${groups||'<div class="empty">Кормів ще немає.<br><br>Додайте ті, якими годуєте — далі вони зʼявляться у формі запису.</div>'}`;
+  document.getElementById('side').innerHTML='';
+  const back=document.querySelector('[data-more="back"]');
+  if(back)back.onclick=()=>{moreMode=null;needScroll=true;renderMore()};
+  document.querySelectorAll('[data-kedit]').forEach(b=>
+    b.onclick=()=>openFood(+b.dataset.kedit));
+  document.querySelectorAll('[data-eedit]').forEach(b=>
+    b.onclick=()=>openDiet(+b.dataset.eedit));
+  const ad=document.getElementById('addDiet');
+  if(ad)ad.onclick=()=>openDiet();
+  const add=document.getElementById('addFood');
+  if(add)add.onclick=()=>openFood();
+  afterRender();
 }
 
 function renderMeds(){
@@ -1407,8 +1716,11 @@ function renderMeds(){
   const past=regimens.filter(r=>r.to).sort((a,b)=>b.to.localeCompare(a.to));
 
   document.getElementById('main').innerHTML=`
+    <!-- width:auto обов'язковий: .more-item має width:100%, і разом з полями
+         по краях кнопка виходила за екран на ці самі поля — у розділі
+         з'являлась горизонтальна прокрутка. -->
     <button class="more-item" data-more="back" style="border:0;padding:14px 2px;
-      margin:0 var(--pad)">← Ще</button>
+      margin:0 var(--pad);width:auto">← Ще</button>
     <div class="med-acts">
       ${API.canWrite()?`<button class="btn ghost" id="addReg">Нове призначення</button>
       <button class="btn ghost" id="addMed">Окремий прийом</button>`:''}
@@ -1423,6 +1735,18 @@ function renderMeds(){
   const back=document.querySelector('[data-more="back"]');
   if(back)back.onclick=()=>{moreMode=null;needScroll=true;renderMore()};
   document.querySelectorAll('[data-medit]').forEach(r=>r.onclick=()=>openMed(r.dataset.medit));
+  /* Розгортаємо на місці, не перемальовуючи розділ: перемалювання поставило б
+     сторінку на найсвіжіші записи, тобто відгорнуло б від картки, яку щойно
+     розкрили. */
+  document.querySelectorAll('[data-mall]').forEach(b=>b.onclick=()=>{
+    const rest=b.closest('.med').querySelector('.mrest');
+    if(!rest)return;
+    const open=rest.hidden;
+    rest.hidden=!open;
+    b.setAttribute('aria-expanded',String(open));
+    b.textContent=open?'згорнути':'показати всі '+
+      (MEDS_SHOWN+rest.querySelectorAll('.mrow').length);
+  });
   document.querySelectorAll('[data-redit]').forEach(b=>
     b.onclick=()=>openRegimen(+b.dataset.redit));
   document.querySelectorAll('[data-endr]').forEach(b=>b.onclick=()=>{
@@ -1630,18 +1954,66 @@ function lastShot(){
     .sort((a,b)=>stamp(a).localeCompare(stamp(b)));
   return s.length?s[s.length-1]:null;
 }
+/**
+ * «Як у цей час учора» — головна кнопка для тих, хто веде однаковий розклад.
+ *
+ * Раніше тут було «як з минулим уколом», і чіплялось воно за укол. Без уколів
+ * кнопка померла б саме тоді, коли стала найпотрібнішою: у журналі власниці
+ * п'ять годувань на добу, ті самі продукти, ті самі грами, ті самі три
+ * препарати — і все це набиралось руками щодня.
+ *
+ * Шукаємо не за точним часом, а за найближчим слотом у межах SLOT_H: час
+ * «гуляє» — 08:00 сьогодні, 08:20 завтра, — а проміжок між годуваннями
+ * годин чотири, тож двогодинне вікно влучає однозначно. І якщо розклад колись
+ * зміниться цілком, пошук підлаштується сам: він не знає про «вісім ранку»,
+ * він знає «те, що було приблизно о цій порі».
+ */
+const SLOT_H=2;
+function slotYesterday(time){
+  if(!time)return null;
+  const want=new Date('2026-01-02T'+time+':00');
+  const hourOf=t=>new Date('2026-01-02T'+t+':00');
+  let best=null,bestGap=Infinity;
+  log.filter(e=>e.time).forEach(e=>{
+    const gap=Math.abs(hourOf(e.time)-want)/36e5;
+    const age=(new Date(TODAY)-new Date(e.date))/864e5;
+    if(age<=0||age>3)return;             /* учора або позавчора, не глибше */
+    if(gap>SLOT_H)return;
+    /* Ближчий за часом виграє; за однакової відстані — свіжіший день. */
+    const score=gap+age*0.01;
+    if(score<bestGap){bestGap=score;best=e}
+  });
+  return best;
+}
+/* Що саме підставить кнопка — показуємо до натискання, а не після. */
+function slotSummary(e){
+  const bits=[];
+  if(e.insulin!=null)bits.push(doseLong(e));
+  feedsAt(e.date,e.time).forEach(f=>bits.push(feedLabel(f)));
+  if(e.food)bits.push(e.food);
+  meds.filter(m=>m.date===e.date&&(m.time||'')===(e.time||''))
+      .forEach(m=>bits.push(medName(m)));
+  return bits.join(', ')||'нічого';
+}
+
 function applyLastShot(){
-  const e=lastShot();
+  const e=slotYesterday(readTime('f'));
   if(!e)return;
-  document.getElementById('f-ins').value=e.insulin!=null?fmt(e.insulin):'';
+  document.getElementById('f-ins').value=doseField(e);
   document.getElementById('f-food').value=e.food||'';
   const mine=meds.filter(m=>m.date===e.date&&(m.time||'')===(e.time||''));
-  document.querySelectorAll('.mp-row').forEach(r=>{
+  document.querySelectorAll('#f-meds .mp-row').forEach(r=>{
     const own=mine.find(m=>m.rid===+r.dataset.rid);
     r.classList.toggle('on',!!own);
     if(own&&own.qty)r.querySelector('.mp-qty').value=own.qty;
   });
-  refreshMedPicker();
+  const fed=feedsAt(e.date,e.time);
+  document.querySelectorAll('#f-feeds .mp-row').forEach(r=>{
+    const own=fed.find(f=>f.fid===+r.dataset.fid);
+    r.classList.toggle('on',!!own);
+    if(own&&own.grams!=null)r.querySelector('.mp-qty').value=fmtG(own.grams);
+  });
+  refreshMedPicker();refreshFoodPicker();
 }
 
 /* Корм плаває: склад і грами міняються, тому даємо кілька недавніх варіантів
@@ -1718,6 +2090,84 @@ function saveMedPicker(date,time,prevKey){
   });
 }
 
+
+/* ================= КОРМ ================= */
+/**
+ * Довідник кормів і події годування — та сама пара, що курси й прийоми ліків.
+ *
+ * Мішана порція не окремий тип: «вологий 43 г + сухий 1 г» це дві події в одну
+ * хвилину, двома рядками. Так грами лишаються сумовними по кожному продукту, а
+ * домішати ще один корм чи змінити корм зовсім не означає міняти схему.
+ */
+const foodOf=fid=>foods.find(f=>f.id===fid)||{name:'',kind:''};
+const feedsAt=(date,time)=>feeds.filter(f=>f.date===date&&(f.time||'')===(time||''));
+/* Скільки цього корму давали востаннє — щоб не набирати ті самі грами щодня. */
+const lastGrams=fid=>{
+  const l=feeds.filter(f=>f.fid===fid&&f.grams!=null)
+    .sort((a,b)=>stamp2(a).localeCompare(stamp2(b)));
+  return l.length?l[l.length-1].grams:'';
+};
+const feedLabel=f=>f.name+(f.grams!=null?' '+fmtG(f.grams)+' г':'');
+/* Грами бувають дробові (1,5 г сухого), але частіше цілі — нуля після коми в
+   цілих не показуємо. */
+const fmtG=n=>String(n).replace('.',',');
+
+function foodPicker(e,id){
+  if(!foods.length)return '<div class="hint">довідник кормів порожній — додайте корми в «Ще»</div>';
+  const mine = id ? feedsAt(e.date,e.time) : [];
+  const rows=foods.map(f=>{
+    const own=mine.find(x=>x.fid===f.id);
+    const on = id ? !!own : false;
+    return `<div class="mp-row${on?' on':''}" data-fid="${f.id}">
+      <button type="button" class="mp-chip">${esc(f.name)}</button>
+      <input class="mp-qty" inputmode="decimal"
+        value="${esc(String((own&&own.grams!=null?own.grams:lastGrams(f.id))||'').replace('.',','))}"
+        placeholder="грами"></div>`;
+  }).join('');
+  const on=foods.filter(f=>id&&mine.find(x=>x.fid===f.id));
+  return `<details class="medbox foodbox"${on.length?' open':''}>
+    <summary><span class="mb-label">Корм</span>
+      <span class="mb-sum">${on.length?on.map(f=>esc(f.name)).join(' · '):'нічого не позначено'}</span>
+      <span class="mb-chev">${CHEV}</span></summary>
+    <div class="medpick" id="f-feeds">${rows}</div>
+  </details>`;
+}
+
+function bindFoodPicker(){
+  if(!document.getElementById('f-feeds'))return;
+  document.querySelectorAll('#f-feeds .mp-row').forEach(r=>{
+    r.querySelector('.mp-chip').onclick=ev=>{
+      ev.preventDefault();r.classList.toggle('on');refreshFoodPicker()};
+  });
+  refreshFoodPicker();
+}
+function refreshFoodPicker(){
+  const names=[...document.querySelectorAll('#f-feeds .mp-row.on .mp-chip')].map(b=>b.textContent);
+  const box=document.querySelector('.foodbox');
+  if(!box)return;
+  const sum=box.querySelector('.mb-sum');
+  if(sum)sum.textContent=names.length?names.join(' * '):'нічого не позначено';
+  box.classList.toggle('picked',!!names.length);
+}
+/* Те саме, що saveMedPicker: усе, що висіло на цьому моменті, знімаємо, а
+   позначене створюємо заново. Простіше за звірку, і id все одно наші. */
+function saveFoodPicker(date,time,prevKey){
+  const box=document.getElementById('f-feeds');
+  if(!box)return;
+  const key=date+' '+(time||'00:00');
+  feeds.filter(f=>stamp2(f)===key||(prevKey&&stamp2(f)===prevKey))
+       .forEach(f=>API.remove('feed',f.id));
+  feeds=feeds.filter(f=>stamp2(f)!==key&&(!prevKey||stamp2(f)!==prevKey));
+  box.querySelectorAll('.mp-row.on').forEach(r=>{
+    const fid=+r.dataset.fid;
+    const raw=r.querySelector('.mp-qty').value.trim().replace(',','.');
+    const grams=raw===''?null:parseFloat(raw);
+    const fd=API.uid('f');
+    feeds.push({id:fd,fid,date,time,name:foodOf(fid).name,grams});
+    API.create('feed',fd,{date,time,name:foodOf(fid).name,grams,foodId:fid});
+  });
+}
+
 function openEntry(id){
   if(shotMode||!API.canWrite())return;
   const e=id?log.find(x=>x.id===id):{time:nowTime()};
@@ -1731,13 +2181,21 @@ function openEntry(id){
       <div class="field"><label for="f-glu">Глюкоза</label>
         <input id="f-glu" type="text" inputmode="decimal" placeholder="9,4 або Hi" value="${e.hi?'Hi':(e.glucose!=null?fmt(e.glucose):'')}"></div>
       <div class="field"><label for="f-ins">Доза, ОД</label>
-        <input id="f-ins" type="text" inputmode="decimal" placeholder="0,5" value="${e.insulin!=null?fmt(e.insulin):''}">
-        <div class="hint">0 = свідомо не зробили</div></div>
+        <input id="f-ins" type="text" inputmode="decimal" placeholder="0,5"
+          value="${esc(doseField(e))}">
+        <!-- Два стани, які набираються щодня, виносимо в чіпи: «без ін'єкції»
+             за два місяці траплялось 54 рази, крапля 16. Набирати це вручну на
+             телефоні — та сама незручність, від якої ми й тікаємо. -->
+        <div class="foodchips">
+          <button type="button" class="fc" data-ins="0">без ін'єкції</button>
+          <button type="button" class="fc" data-ins="${DROP_WORD}">крапля</button>
+        </div></div>
     </div>
     <div class="field"><label for="f-food">Корм</label>
       <input id="f-food" type="text" value="${id?esc(e.food):''}" placeholder="вологий 85 г">
       ${recentFoods().length?`<div class="foodchips">${recentFoods().map(f=>
         `<button type="button" class="fc" data-food="${esc(f)}">${esc(f)}</button>`).join('')}</div>`:''}</div>
+    <div class="field">${foodPicker(e,id)}</div>
     <div class="field">${medPicker(e,id)}</div>
     <div class="field"><label for="f-note">Моя нотатка</label><textarea id="f-note" autocapitalize="none" placeholder="стан, поведінка">${esc(e.note)}</textarea></div>`,
     id?()=>{
@@ -1748,15 +2206,45 @@ function openEntry(id){
       log=log.filter(x=>x.id!==id);close();renderGlucose()}:null,
     /* Кнопка переїхала в заголовок іконкою: заповнює форму завжди одна людина,
        тож підпис і примітка «що бере, а що не чіпає» лише займали екран. */
-    id||!lastShot()?'':`<button type="button" class="ordbtn icon" id="likeLast"
-      title="Як з минулим уколом: доза, ліки й корм. Глюкозу не чіпає"
-      aria-label="Як з минулим уколом">${REPEAT}</button>`);
+    /* Кнопка чіплялась за укол. Без уколів вона померла б саме тоді, коли
+       стала найпотрібнішою, тому тепер вона про слот, а не про укол.
+
+       Малюється завжди, коли в журналі взагалі є записи з часом, а вмикає і
+       вимикає її підпис при зміні часу: інакше кнопки не було б там, де слот
+       зʼявляється вже після того, як час у формі виправили. */
+    (id||!log.some(e=>e.time))?'':`<button type="button" class="ordbtn icon"
+      id="likeLast">${REPEAT}</button>`);
   bindTime('f');bindDate('f-date');
-  bindMedPicker();
+  bindMedPicker();bindFoodPicker();
   const ll=document.getElementById('likeLast');
-  if(ll)ll.onclick=ev=>{ev.preventDefault();applyLastShot()};
+  if(ll){
+    /* Підпис перераховуємо на кожну зміну часу, а не один раз при відкритті:
+       слот залежить від поля, і кнопка, яка обіцяє 20:00, а підставляє 08:05,
+       гірша за кнопку без підпису. */
+    const tellLast=()=>{
+      /* Запасного «останнього уколу» тут немає навмисно: пошук і так
+         дивиться на три доби назад, тож якщо в межах двох годин нічого не
+         знайшлось — повторювати справді нема чого, і кнопка має це сказати,
+         а не підставити запис із іншої пори дня. */
+      const y=slotYesterday(readTime('f'));
+      const what=y?`Повторити ${y.time||''}: ${slotSummary(y)}. Глюкозу не чіпає`
+                 :'Немає з чого повторювати';
+      ll.title=what; ll.setAttribute('aria-label',what);
+      ll.disabled=!y;
+    };
+    tellLast();
+    const tf=document.getElementById('f-time');
+    if(tf)tf.addEventListener('input',tellLast);
+    ll.onclick=ev=>{ev.preventDefault();applyLastShot()};
+  }
   document.querySelectorAll('[data-food]').forEach(b=>b.onclick=ev=>{
     ev.preventDefault();document.getElementById('f-food').value=b.dataset.food});
+  /* Повторний тап по тому самому чіпу знімає значення: інакше поставлену
+     помилково «краплю» довелось би стирати вручну на дрібній клавіатурі. */
+  document.querySelectorAll('[data-ins]').forEach(b=>b.onclick=ev=>{
+    ev.preventDefault();
+    const f=document.getElementById('f-ins');
+    f.value = f.value.trim()===b.dataset.ins ? '' : b.dataset.ins;});
   document.getElementById('saveBtn').onclick=()=>{
     const raw=document.getElementById('f-glu').value.trim().replace(',','.');
     const hi=/^hi$/i.test(raw);
@@ -1764,16 +2252,22 @@ function openEntry(id){
     const data={date:document.getElementById('f-date').value||TODAY,
       time:readTime('f'),
       glucose:hi||!raw?null:parseFloat(raw),hi,
-      insulin:ins===''?null:parseFloat(ins),
+      /* Крапля зберігається словом і в таблиці: «0,05 ОД» виглядало б як
+         виміряна доза, якої ніхто не міряв. Для застосунку це нуль із
+         прапорцем — укол був, дози немає. */
+      insulin:ins===''?null:(/^крапл/i.test(ins)?0:parseFloat(ins)),
+      drop:/^крапл/i.test(ins),
       food:document.getElementById('f-food').value.trim(),
       note:document.getElementById('f-note').value.trim(),
       vet:e.vet};
     const row={date:data.date,time:data.time,
-      glucose:data.hi?'Hi':data.glucose,insulin:data.insulin,
+      glucose:data.hi?'Hi':data.glucose,
+      insulin:data.drop?DROP_WORD:data.insulin,
       food:data.food,note:data.note};
     if(editing){Object.assign(log.find(x=>x.id===editing),data);API.update('journal',editing,row)}
     else{const nid=API.uid('j');log.push({id:nid,...data});API.create('journal',nid,row)}
     saveMedPicker(data.date,data.time,id?(e.date+' '+e.time):null);
+    saveFoodPicker(data.date,data.time,id?(e.date+' '+e.time):null);
     close();renderGlucose();
   };
 }
@@ -1837,10 +2331,13 @@ let moreMode=null;
 
 function renderMore(){
   if(moreMode==='meds')return renderMeds();
+  if(moreMode==='foods')return renderFoods();
   beginRender();clearBar();
   document.getElementById('side').innerHTML='';
   document.getElementById('main').innerHTML=`
     <div class="more-list">
+      <button class="more-item" data-more="foods">Корми
+        <span class="mi-sub">${foods.length||''}</span></button>
       <button class="more-item" data-more="meds">Ліки
         <span class="mi-sub">курси і прийоми</span></button>
       ${sheetUrl?`<a class="more-item" href="${sheetUrl}" target="_blank"
@@ -1852,6 +2349,8 @@ function renderMore(){
       Дані станом на ${hhmmOf(new Date(API.cachedAt()))}.<br>
       ${loadedFrom?`Завантажено з ${dateShort(loadedFrom)}${
         allLoaded?' — це вся історія':', є старіші'}.`:''}</div>`;
+  const bFoods=document.querySelector('[data-more="foods"]');
+  if(bFoods)bFoods.onclick=()=>{moreMode='foods';needScroll=true;renderMore()};
   document.querySelector('[data-more="meds"]').onclick=()=>{
     moreMode='meds';needScroll=true;renderMore();
   };
@@ -2052,11 +2551,28 @@ function show(data){
  * Пауза в записах не має виглядати як порожній застосунок. Вікно рахується
  * від сьогодні, тому після кількох тижнів без відміток — ремісія, від'їзд,
  * будь-що — у нього просто нічого не потрапляє, хоч уся історія на місці.
- * Тоді розширюємо вікно самі, доки щось не знайдеться.
+ * Тоді розширюємо вікно самі, доки не набереться на що дивитись.
+ *
+ * Раніше умовою була порожнеча: розширювали, лише коли в журналі **зовсім**
+ * нічого. Для щоденних замірів цього вистачало, бо тридцять днів вікна
+ * означали тридцять діб записів. При рідкому записі — а до цього все й іде —
+ * тридцять днів можуть дати три рядки, і розділ виглядає майже порожнім, хоч
+ * розширювати ніхто не збирається: формально ж не порожньо.
+ *
+ * Тому міряємо не рядки, а **доби, у яких хоч щось записано**. Рахуємо по
+ * всіх трьох аркушах разом: у ремісії журнал може мовчати тижнями, а лоток і
+ * ліки — ні, і тоді розширювати нема чого.
+ *
+ * Кожен крок — потроєння вікна і ще один похід до скрипта на 3–7 секунд,
+ * тому кроків небагато, і зупиняємось, щойно дотяглись до початку історії.
  */
-async function widenIfEmpty(){
+const MIN_DAYS=14;
+const daysWithRecords=()=>new Set([].concat(
+  log.map(e=>e.date), urine.map(u=>u.date), meds.map(m=>m.date))).size;
+
+async function widenIfThin(){
   let tries=0;
-  while(!log.length&&!allLoaded&&tries<3){
+  while(daysWithRecords()<MIN_DAYS&&!allLoaded&&tries<3){
     tries++;
     daysWanted*=3;
     const data=await API.load(daysWanted);
@@ -2123,7 +2639,9 @@ async function boot(){
 
   try{
     show(await API.load());
-    if(!log.length)await widenIfEmpty();
+    /* Умову перевіряє сама функція: вона дивиться не на журнал, а на доби з
+       записами в усіх аркушах. */
+    await widenIfThin();
     if(!failBanner())say(API.pending()?'Не відправлено записів: '+API.pending():'');
   }catch(err){
     if(!cached){

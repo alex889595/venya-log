@@ -219,7 +219,12 @@ function adopt(payload) {
   log = (payload.journal || []).map(r => ({
     id: r.id, date: r.date, time: r.time,
     glucose: r.glucose, hi: !!r.hi,
-    insulin: r.insulin, food: r.food || '', note: r.note || '', vet: r.vet || ''
+    /* insulin тут і далі — число або null. Крапля приходить нулем із
+       прапорцем: нуль, бо дози немає, укол, бо він був і добу починає так
+       само, як звичайний. Завдяки цьому жодна з перевірок `insulin != null`
+       у застосунку не змінилась. */
+    insulin: r.insulin, drop: !!r.drop,
+    food: r.food || '', note: r.note || '', vet: r.vet || ''
   }));
 
   urine = (payload.urine || []).map(r => ({
@@ -229,6 +234,24 @@ function adopt(payload) {
   meds = (payload.meds || []).map(r => ({
     id: r.id, date: r.date, time: r.time || undefined,
     rid: r.regimenId, qty: r.qty || '', note: r.note || undefined
+  }));
+
+  /* Події годування і довідник продуктів — та сама пара, що прийоми і курси. */
+  feeds = (payload.feeds || []).map(r => ({
+    id: r.id, date: r.date, time: r.time || undefined,
+    fid: r.foodId, name: r.name || '', grams: r.grams,
+    note: r.note || undefined
+  }));
+
+  foods = (payload.foods || []).map(r => ({
+    id: r.id, name: r.name, kind: r.kind || '',
+    kcal: r.kcal, carbs: r.carbs, note: r.note || ''
+  }));
+
+  /* Дієта — окремий факт із датами, не властивість годування: під час
+     переходу старим кормом ще догодовують. */
+  diets = (payload.diets || []).map(r => ({
+    id: r.id, name: r.name, from: r.from, to: r.to || null, note: r.note || ''
   }));
 
   regimens = (payload.regimens || []).map(r => ({
