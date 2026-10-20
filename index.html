@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=131">
+<link rel="stylesheet" href="styles.css?v=133">
 </head>
 <body>
 <div class="app">
@@ -39,9 +39,10 @@
     <button class="fab" id="addBtn" aria-label="Новий запис">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
       <span class="fab-t" aria-hidden="true">Запис</span></button>
-    <button role="tab" data-view="cycles" aria-selected="false">
-      <svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 4 5-8 4 5"/></svg>
-      Зведення</button>
+    <!-- «Зведення» переїхало в «Ще»: воно працює, але відкривається рідко,
+         а місце в барі коштує стільки ж, скільки щоденне. Четверта вкладка
+         лишається порожньою навмисно — поставимо туди «Добу», коли буде чим
+         її наповнити, а не щоб слот не пустував. -->
     <button role="tab" data-view="more" aria-selected="false">
       <svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>
       Ще</button>
@@ -53,8 +54,8 @@
 <div class="scrim" id="scrim"></div>
 <div class="sheet" id="sheet" role="dialog" aria-label="Запис"><div id="sheetBody"></div></div>
 
-<script src="config.js?v=131"></script>
-<script src="api.js?v=131"></script>
-<script src="app.js?v=131"></script>
+<script src="config.js?v=133"></script>
+<script src="api.js?v=133"></script>
+<script src="app.js?v=133"></script>
 </body>
 </html>

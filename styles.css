@@ -652,7 +652,7 @@ body.shot .env{display:none}
 /* Немає кнопки — немає й колонки під неї. Явні номери колонок теж треба
    зняти: у чотириколонковій сітці п'ятий номер породжував зайву колонку збоку,
    і вкладки з'їжджали. */
-body.shot .tabbar,body.ro .tabbar{grid-template-columns:repeat(4,1fr)}
+body.shot .tabbar,body.ro .tabbar{grid-template-columns:repeat(3,1fr)}
 body.shot .tabbar button[data-view],
 body.ro .tabbar button[data-view]{grid-column:auto}
 .ordbtn.on{color:var(--sage);border-color:color-mix(in srgb,var(--sage) 45%,transparent)}
@@ -696,10 +696,12 @@ body.ro .dr,body.ro .u-chip,body.ro .mrow{cursor:default}
    кнопка стає звичайною парою «іконка + слово», і вирівняти їх по одній лінії
    можна лише тоді, коли обидва — справжні діти флексу. */
 .tabbar .fab .fab-t{display:none}
+/* Вкладок три, а колонок під них чотири: «Ще» розтягується на обидві праві,
+   тобто стоїть посередині своєї half. Інакше праворуч від «＋» був би один
+   значок у кутку і діра поруч. */
 .tabbar button[data-view]:nth-child(1){grid-column:1}
 .tabbar button[data-view]:nth-child(2){grid-column:2}
-.tabbar button[data-view]:nth-child(4){grid-column:4}
-.tabbar button[data-view]:nth-child(5){grid-column:5}
+.tabbar button[data-view]:nth-child(4){grid-column:4/6}
 .tabbar .fab.hidden{display:none}
 
 /* Screenshot mode hides all of the chrome, not just the button: otherwise the

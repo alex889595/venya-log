@@ -694,6 +694,16 @@ function renderGlucose(){
  * «Зведенні», а не в журналі; журнал лишається однією таблицею, і в нього
  * більше не треба перемикача подань.
  */
+/* Повернення в «Ще». У «Зведення» більше немає власної вкладки, тож без цього
+   рядка вийти можна було б лише тапом по «Ще» наосліп — а він там і так
+   підсвічений, тобто виглядав би як «ти вже тут». */
+const backToMore=()=>`<button class="more-item" data-more="back"
+  style="border:0;padding:14px 2px;margin:0 var(--pad);width:auto">&larr; Ще</button>`;
+function bindBackToMore(){
+  const b=document.querySelector('[data-more="back"]');
+  if(b)b.onclick=()=>{moreMode=null;needScroll=true;setView('more')};
+}
+
 function renderCards(){
   beginRender();
   sumBar();
@@ -808,8 +818,8 @@ function renderCards(){
 
   if(!chrono)html+=moreBar('journal');
 
-  document.getElementById('main').innerHTML=html;
-  bindMore();
+  document.getElementById('main').innerHTML=backToMore()+html;
+  bindMore();bindBackToMore();
   /* Розгортаємо тільки те, що натиснули: закривати сусідів і водночас кудись
      прокручувати — це й був той стрибок «не туди», бо позиція рахувалась уже
      після того, як картка вище згорталась і все з'їжджало. Тепер картка
@@ -1139,11 +1149,17 @@ function trendView(){
     lg(`<svg width="12" height="12"><circle cx="6" cy="6" r="4.2" fill="${B}"/></svg>`,'ранок'),
     lg(`<svg width="12" height="12"><circle cx="6" cy="6" r="3.6" fill="none" stroke="${B}" stroke-width="2"/></svg>`,'вечір'),
     lg(`<svg width="14" height="12"><circle cx="7" cy="6" r="2.4" fill="${BANDS[4].color}"/><circle cx="7" cy="6" r="5.2" fill="none" stroke="${BANDS[4].color}" stroke-width="1.2" stroke-dasharray="2.2 2.2"/></svg>`,'Hi'),
-    lg(`<svg width="12" height="12"><rect x="3" y="2" width="6" height="9" rx="1.5" fill="${C_INS}"/></svg>`,'доза'),
-    lg(`<svg width="14" height="12"><line x1="2" y1="6" x2="12" y2="6" stroke="var(--faint)" stroke-width="2" stroke-dasharray="2 2.5"/></svg>`,'укол не робили'),
+    ...(cyc.some(c=>c.dose>0||c.drop)?[
+      lg(`<svg width="12" height="12"><rect x="3" y="2" width="6" height="9" rx="1.5" fill="${C_INS}"/></svg>`,'доза'),
+      lg(`<svg width="14" height="12"><line x1="2" y1="6" x2="12" y2="6" stroke="var(--faint)" stroke-width="2" stroke-dasharray="2 2.5"/></svg>`,'укол не робили')]:[]),
     lg(`<svg width="16" height="12"><rect x="1" y="3" width="14" height="6" fill="${B}" opacity=".22"/></svg>`,'5–15 ммоль/л'),
   ]);
-  const base=c=>({slot:c.slot,dose:c.dose,drop:!!c.drop,
+  /* Чи був у цьому періоді хоч один справжній укол. Коли уколів немає, ряд
+     доз перетворюється на шістдесят однакових пунктирних рисок поспіль — він
+     повторює «без ін'єкції» рівно стільки разів, скільки в періоді діб, і не
+     додає нічого. Тоді його не малюємо, а підписи говорять за фактом. */
+  const dosed=cyc.some(c=>c.dose>0||c.drop);
+  const base=c=>({slot:c.slot,dose:dosed?c.dose:null,drop:!!c.drop,
     label:c.slot==='am'?dateShort(c.shot.date):''});
   const pre=cyc.filter(c=>c.shot.glucose!=null||c.shot.hi).map(c=>Object.assign(base(c),{
     v:c.shot.hi?30:c.shot.glucose, hi:!!c.shot.hi, col:colorFor(c.shot)}));
@@ -1160,11 +1176,11 @@ function trendView(){
     `<button data-lw="${k}" class="${lowWindow===k?'on':''}">${l}</button>`).join('');
 
   return bar+`<section class="chart-box">
-      <h4>Глюкоза на момент уколу</h4>
+      <h4>${dosed?'Глюкоза на момент уколу':'Глюкоза перед годуванням'}</h4>
       ${trendChart(pre,{H:250})}
     </section>
     <section class="chart-box">
-      <h4>Найнижче виміряне в циклі</h4>
+      <h4>${dosed?'Найнижче виміряне в циклі':'Найнижче виміряне за добу'}</h4>
       <div class="seg-in" style="margin-left:0;margin-right:0">${seg}</div>
       ${trendChart(low,{H:250})}
       <div class="scroll-hint">Точок із даними: ${shown} з ${low.length}.</div>
@@ -1310,8 +1326,9 @@ function renderCycles(){
   const chrono=chronoNow();
   sumBar();
   document.getElementById('main').innerHTML=
-    (chrono?more:'')+views[sumMode]()+(chrono?'':more);
+    backToMore()+(chrono?more:'')+views[sumMode]()+(chrono?'':more);
   if(sumMode==='rows')bindMore();
+  bindBackToMore();
   afterRender();
   document.querySelectorAll('[data-lw]').forEach(b=>
     b.onclick=()=>{lowWindow=b.dataset.lw==='true';renderCycles()});
@@ -2336,6 +2353,8 @@ function renderMore(){
   document.getElementById('side').innerHTML='';
   document.getElementById('main').innerHTML=`
     <div class="more-list">
+      <button class="more-item" data-more="sum">Зведення
+        <span class="mi-sub">картки, доби, графіки</span></button>
       <button class="more-item" data-more="foods">Корми
         <span class="mi-sub">${foods.length||''}</span></button>
       <button class="more-item" data-more="meds">Ліки
@@ -2349,6 +2368,8 @@ function renderMore(){
       Дані станом на ${hhmmOf(new Date(API.cachedAt()))}.<br>
       ${loadedFrom?`Завантажено з ${dateShort(loadedFrom)}${
         allLoaded?' — це вся історія':', є старіші'}.`:''}</div>`;
+  const bSum=document.querySelector('[data-more="sum"]');
+  if(bSum)bSum.onclick=()=>{needScroll=true;setView('cycles')};
   const bFoods=document.querySelector('[data-more="foods"]');
   if(bFoods)bFoods.onclick=()=>{moreMode='foods';needScroll=true;renderMore()};
   document.querySelector('[data-more="meds"]').onclick=()=>{
@@ -2372,8 +2393,12 @@ function setView(v){
      Зайвого питання «що записуємо» не потрібно. */
   document.getElementById('addBtn').classList.toggle('hidden',
     shotMode||!API.canWrite());
+  /* У «Зведення» власної вкладки більше немає — воно відкривається з «Ще».
+     Підсвічуємо тому «Ще»: бар має показувати, де ти стоїш, а не гаснути
+     цілком, щойно зайшов у розділ без кнопки. */
+  const tab=v==='cycles'?'more':v;
   document.querySelectorAll('.tabbar [data-view]').forEach(b=>
-    b.setAttribute('aria-selected', String(b.dataset.view===v)));
+    b.setAttribute('aria-selected', String(b.dataset.view===tab)));
   updateNow();
 }
 document.querySelectorAll('.tabbar [data-view]').forEach(t=>
